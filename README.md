@@ -1,75 +1,45 @@
-# Nuxt Minimal Starter
+# Docker Registry API 服务
 
-Look at the [Nuxt documentation](https://nuxt.com/docs/getting-started/introduction) to learn more.
+这是一个基于 Nuxt.js 构建的 Docker Registry API 服务，用于处理 Docker 镜像相关的操作。
 
-## Setup
+## 功能特性
 
-Make sure to install dependencies:
+- 获取 Docker Registry 认证令牌
+- 拉取 Docker 镜像
+- 获取镜像 Manifest 信息
+- 获取详细的 Manifest 信息
+- 组装 Docker 镜像
+
+## 项目结构
 
 ```bash
-# npm
-npm install
+server/api/docker/
+├── token.ts # 处理认证令牌
+├── pull-image.ts # 镜像拉取
+├── manifest.ts # 获取基础 manifest
+├── manifest-detail.ts # 获取详细 manifest
+└── assemble-image.ts # 镜像组装
+```
 
-# pnpm
+## 使用方法
+
+1. 安装 Node.js 和 npm
+
+2. 安装依赖
+
+```bash
+npm install 
+yarn 
 pnpm install
-
-# yarn
-yarn install
-
-# bun
-bun install
 ```
 
-## Development Server
-
-Start the development server on `http://localhost:3000`:
+3. 启动开发环境
 
 ```bash
-# npm
 npm run dev
-
-# pnpm
-pnpm dev
-
-# yarn
 yarn dev
-
-# bun
-bun run dev
+pnpm dev
 ```
 
-## Production
 
-Build the application for production:
 
-```bash
-# npm
-npm run build
-
-# pnpm
-pnpm build
-
-# yarn
-yarn build
-
-# bun
-bun run build
-```
-
-Locally preview production build:
-
-```bash
-# npm
-npm run preview
-
-# pnpm
-pnpm preview
-
-# yarn
-yarn preview
-
-# bun
-bun run preview
-```
-
-Check out the [deployment documentation](https://nuxt.com/docs/getting-started/deployment) for more information.
