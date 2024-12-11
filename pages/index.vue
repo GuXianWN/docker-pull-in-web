@@ -1,17 +1,26 @@
 <template>
-  <div class="container">
-    <div class="form-section">
-      <div class="input-group">
-        <input v-model="state.imageName" placeholder="镜像名称 (例如: nginx)" />
-        <input v-model="state.tag" placeholder="标签 (例如: latest)" />
+  <div class="max-w-800px mx-auto p-5 font-mono">
+    <div class="flex flex-col gap-3 mb-5">
+      <div class="flex gap-3">
+        <input 
+          v-model="state.imageName" 
+          placeholder="镜像名称 (例如: nginx)" 
+          class="input-base flex-1"
+        />
+        <input 
+          v-model="state.tag" 
+          placeholder="标签 (例如: latest)" 
+          class="input-base flex-1"
+        />
       </div>
       
       <button 
         v-if="!state.platforms.length"
         @click="initPlatforms" 
-        class="init-button"
+        class="btn-green"
         :disabled="state.loading"
       >
+        <div class="i-carbon-container-software mr-2" />
         {{ state.loading ? "获取平台信息..." : "获取平台信息" }}
       </button>
 
@@ -24,28 +33,40 @@
       <button
         @click="handlePull"
         :disabled="state.loading || !canPull"
-        class="pull-button"
+        class="btn-blue"
       >
+        <div class="i-carbon-download mr-2" />
         {{ state.loading ? "处理中..." : "拉取镜像" }}
       </button>
     </div>
 
-    <div v-if="state.error" class="error-message">
+    <div 
+      v-if="state.error" 
+      class="my-3 p-3 bg-red-50 border-2 border-red-500 rounded-lg text-red-600"
+    >
+      <div class="i-carbon-warning-filled mr-2" />
       {{ state.error }}
     </div>
 
-    <div v-if="state.downloadComplete" class="success-message">
-      <div class="success-icon">✓</div>
-      <div class="success-text">
-        <h3>下载完成！</h3>
-        <p>
+    <div 
+      v-if="state.downloadComplete" 
+      class="my-5 p-5 bg-green-50 border-2 border-green-500 rounded-lg flex items-start gap-4"
+    >
+      <div class="w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center text-lg">
+        <div class="i-carbon-checkmark" />
+      </div>
+      <div class="flex-1">
+        <h3 class="text-green-800 text-lg font-bold mb-2">下载完成！</h3>
+        <p class="text-green-700">
           总共: {{ state.downloadSummary?.total }} 层
-          <span class="summary-detail">
+          <span class="text-gray-600 text-sm">
             (新下载: {{ state.downloadSummary?.downloaded }},
             已存在: {{ state.downloadSummary?.skipped }})
           </span>
         </p>
-        <p class="hint-text">镜像文件已开始下载，请检查浏览器下载列表。</p>
+        <p class="text-gray-600 text-sm mt-3">
+          镜像文件已开始下载，请检查浏览器下载列表。
+        </p>
       </div>
     </div>
 
