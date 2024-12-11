@@ -34,8 +34,23 @@
       {{ state.error }}
     </div>
 
+    <div v-if="state.downloadComplete" class="success-message">
+      <div class="success-icon">✓</div>
+      <div class="success-text">
+        <h3>下载完成！</h3>
+        <p>
+          总共: {{ state.downloadSummary?.total }} 层
+          <span class="summary-detail">
+            (新下载: {{ state.downloadSummary?.downloaded }},
+            已存在: {{ state.downloadSummary?.skipped }})
+          </span>
+        </p>
+        <p class="hint-text">镜像文件已开始下载，请检查浏览器下载列表。</p>
+      </div>
+    </div>
+
     <LayerProgress
-      v-if="Object.keys(state.downloadProgress).length > 0"
+      v-if="Object.keys(state.downloadProgress).length > 0 && !state.downloadComplete"
       :progress-data="state.downloadProgress"
     />
   </div>
@@ -63,6 +78,12 @@ const state = reactive({
   activeDownloads: new Set<string>(),
   currentToken: "",
   currentManifest: null as any,
+  downloadComplete: false,
+  downloadSummary: null as {
+    total: number;
+    skipped: number;
+    downloaded: number;
+  } | null,
 });
 
 // 计算属性
@@ -123,6 +144,11 @@ const handleDownloadProgress = async (eventSource: EventSource, layers: any[]) =
         layers.forEach((layer) => {
           state.activeDownloads.delete(layer.digest);
         });
+        
+        // 设置下载完成状态和汇总信息
+        state.downloadComplete = true;
+        state.downloadSummary = data.summary;
+        
         if (state.currentManifest) {
           await assembleImage();
         }
@@ -211,6 +237,8 @@ const handlePull = async () => {
   state.error = "";
   state.downloadProgress = {};
   state.currentManifest = null;
+  state.downloadComplete = false;
+  state.downloadSummary = null;
 
   try {
     await fetchToken();
@@ -333,5 +361,53 @@ input {
 .init-button:disabled {
   background-color: #ccc;
   cursor: not-allowed;
+}
+
+.success-message {
+  margin: 20px 0;
+  padding: 20px;
+  background-color: #e8f5e9;
+  border: 2px solid #4caf50;
+  border-radius: 4px;
+  display: flex;
+  align-items: flex-start;
+  gap: 15px;
+}
+
+.success-icon {
+  background-color: #4caf50;
+  color: white;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+
+.success-text {
+  flex: 1;
+}
+
+.success-text h3 {
+  margin: 0 0 10px 0;
+  color: #2e7d32;
+}
+
+.success-text p {
+  margin: 5px 0;
+  color: #1b5e20;
+}
+
+.summary-detail {
+  color: #666;
+  font-size: 0.9em;
+}
+
+.hint-text {
+  font-size: 0.9em;
+  color: #666;
+  margin-top: 10px;
 }
 </style>
