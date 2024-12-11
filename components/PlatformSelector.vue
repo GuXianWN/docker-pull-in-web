@@ -1,6 +1,10 @@
 <template>
-  <div class="select-group">
-    <select v-model="selectedArch" @change="handleChange">
+  <div class="flex gap-3">
+    <select 
+      v-model="selectedArch" 
+      @change="handleChange"
+      class="input-base flex-1"
+    >
       <option value="">选择架构</option>
       <option 
         v-for="arch in availableArchitectures" 
@@ -10,7 +14,11 @@
         {{ arch }}
       </option>
     </select>
-    <select v-model="selectedOS" @change="handleChange">
+    <select 
+      v-model="selectedOS" 
+      @change="handleChange"
+      class="input-base flex-1"
+    >
       <option value="">选择操作系统</option>
       <option 
         v-for="os in availableOS" 
