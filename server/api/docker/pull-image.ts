@@ -1,5 +1,5 @@
 import axios from "axios";
-import { HttpsProxyAgent } from "https-proxy-agent";
+import { getProxyAgent } from "~/utils/proxy";
 import { createWriteStream, existsSync, mkdirSync, statSync } from "fs";
 import { join } from "path";
 
@@ -115,18 +115,15 @@ export default defineEventHandler(async (event) => {
         };
       }
 
-      const httpsAgent = new HttpsProxyAgent("http://127.0.0.1:7890");
-      const response = await axios({
-        method: "get",
-        url: `https://registry-1.docker.io/v2/library/${imageName}/blobs/${layer.digest}`,
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        responseType: "stream",
-        httpsAgent,
-        maxContentLength: Infinity,
-        maxBodyLength: Infinity,
-      });
+      const httpsAgent = getProxyAgent();
+      const response = await axios.get(
+        `https://registry-1.docker.io/v2/library/${imageName}/blobs/${layer.digest}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          responseType: "stream",
+          ...(httpsAgent && { httpsAgent }),
+        }
+      );
 
       if (response.status !== 200) {
         throw new Error(`HTTP状态码 ${response.status}`);
