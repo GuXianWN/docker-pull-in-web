@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  app:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: docker-puller
+    volumes:
+      - ./downloads:/app/downloads
+      - ./tmp:/app/tmp
+    environment:
+      - NODE_ENV=production
+      - NUXT_HOST=0.0.0.0
+      - NUXT_PORT=3000
+    restart: unless-stopped
+    network_mode: host
