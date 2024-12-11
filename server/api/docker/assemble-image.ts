@@ -1,5 +1,5 @@
 import axios from "axios";
-import { HttpsProxyAgent } from "https-proxy-agent";
+import { getProxyAgent } from "~/utils/proxy";
 import { writeFileSync, promises as fs } from "fs";
 import { join } from "path";
 import * as tar from "tar";
@@ -67,12 +67,12 @@ export default defineEventHandler(async (event) => {
 
   // 获取配置文件
   const fetchConfig = async () => {
-    const httpsAgent = new HttpsProxyAgent("http://127.0.0.1:7890");
+    const httpsAgent = getProxyAgent();
     const response = await axios.get(
       `https://registry-1.docker.io/v2/library/${imageName}/blobs/${manifest.config.digest}`,
       {
         headers: { Authorization: `Bearer ${token}` },
-        httpsAgent,
+        ...(httpsAgent && { httpsAgent }),
       }
     );
     return response.data;

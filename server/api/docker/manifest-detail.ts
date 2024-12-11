@@ -1,5 +1,5 @@
 import axios from "axios";
-import { HttpsProxyAgent } from "https-proxy-agent";
+import { getProxyAgent } from "~/utils/proxy";
 
 // 请求参数接口
 type QueryParams = {
@@ -37,7 +37,7 @@ export default defineEventHandler(
     const { imageName, digest, token, mediaType } = query;
 
     const fetchManifestDetail = async () => {
-      const httpsAgent = new HttpsProxyAgent("http://127.0.0.1:7890");
+      const httpsAgent = getProxyAgent();
       const response = await axios.get<ManifestDetailResponse>(
         `https://registry-1.docker.io/v2/library/${imageName}/manifests/${digest}`,
         {
@@ -45,7 +45,7 @@ export default defineEventHandler(
             Authorization: `Bearer ${token}`,
             Accept: mediaType,
           },
-          httpsAgent,
+          ...(httpsAgent && { httpsAgent }),
         }
       );
       return response.data;

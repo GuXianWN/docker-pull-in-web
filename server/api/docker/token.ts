@@ -1,5 +1,5 @@
 import axios from "axios";
-import { HttpsProxyAgent } from "https-proxy-agent";
+import { getProxyAgent } from "~/utils/proxy";
 
 // 请求参数接口
 type QueryParams = {
@@ -25,7 +25,7 @@ export default defineEventHandler(async (event): Promise<ApiResponse> => {
   const scope = query.scope || "pull";
 
   const fetchToken = async () => {
-    const httpsAgent = new HttpsProxyAgent("http://127.0.0.1:7890");
+    const httpsAgent = getProxyAgent();
     const response = await axios.get<DockerAuthResponse>(
       "https://auth.docker.io/token",
       {
@@ -33,7 +33,7 @@ export default defineEventHandler(async (event): Promise<ApiResponse> => {
           service: "registry.docker.io",
           scope: `repository:library/${imageName}:${scope}`,
         },
-        httpsAgent,
+        ...(httpsAgent && { httpsAgent }),
       }
     );
     return response.data;
