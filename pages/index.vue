@@ -5,11 +5,22 @@
         <input v-model="state.imageName" placeholder="镜像名称 (例如: nginx)" />
         <input v-model="state.tag" placeholder="标签 (例如: latest)" />
       </div>
+      
+      <button 
+        v-if="!state.platforms.length"
+        @click="initPlatforms" 
+        class="init-button"
+        :disabled="state.loading"
+      >
+        {{ state.loading ? "获取平台信息..." : "获取平台信息" }}
+      </button>
+
       <PlatformSelector
-        v-if="state.platforms.length > 0"
+        v-else
         :platforms="state.platforms"
         @update:platform="handlePlatformSelect"
       />
+
       <button
         @click="handlePull"
         :disabled="state.loading || !canPull"
@@ -227,10 +238,33 @@ const handlePull = async () => {
   }
 };
 
-// 初始化
+// 初始化平台信息
+const initPlatforms = async () => {
+  if (!state.imageName || !state.tag) {
+    state.error = "请输入镜像名称和标签";
+    return;
+  }
+
+  state.loading = true;
+  state.error = "";
+  
+  try {
+    await fetchToken();
+    const manifests = await fetchManifests();
+    state.platforms = manifests.manifests.map((m) => m.platform);
+  } catch (e) {
+    state.error = e instanceof Error ? e.message : "获取平台信息失败";
+    console.error("获取平台信息失败:", e);
+  } finally {
+    state.loading = false;
+  }
+};
+
+// 修改初始化逻辑
 onMounted(() => {
-  if (canPull.value) {
-    handlePull();
+  // 移除自动拉取，改为手动获取平台信息
+  if (state.imageName && state.tag) {
+    initPlatforms();
   }
 });
 </script>
@@ -284,5 +318,20 @@ input {
   padding: 10px;
   background-color: #ffebee;
   border-radius: 4px;
+}
+
+.init-button {
+  padding: 8px 16px;
+  background-color: #4caf50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: monospace;
+}
+
+.init-button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
 }
 </style>
