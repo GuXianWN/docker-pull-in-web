@@ -2,330 +2,235 @@
   <div class="container">
     <div class="form-section">
       <div class="input-group">
-        <input v-model="imageName" placeholder="镜像名称 (例如: nginx)" />
-        <input v-model="tag" placeholder="标签 (例如: latest)" />
+        <input v-model="state.imageName" placeholder="镜像名称 (例如: nginx)" />
+        <input v-model="state.tag" placeholder="标签 (例如: latest)" />
       </div>
-      <div class="select-group">
-        <select v-model="selectedArch">
-          <option value="">选择架构</option>
-          <option value="amd64">amd64</option>
-          <option value="arm64">arm64</option>
-          <option value="arm">arm</option>
-        </select>
-        <select v-model="selectedOS">
-          <option value="">选择操作系统</option>
-          <option value="linux">linux</option>
-          <option value="windows">windows</option>
-        </select>
-      </div>
-      <button @click="fetchAndPull" :disabled="loading || !canPull">
-        {{ loading ? "处理中..." : "拉取镜像" }}
+      <PlatformSelector
+        v-if="state.platforms.length > 0"
+        :platforms="state.platforms"
+        @update:platform="handlePlatformSelect"
+      />
+      <button
+        @click="handlePull"
+        :disabled="state.loading || !canPull"
+        class="pull-button"
+      >
+        {{ state.loading ? "处理中..." : "拉取镜像" }}
       </button>
     </div>
 
-    <div v-if="error" class="error-message">
-      {{ error }}
+    <div v-if="state.error" class="error-message">
+      {{ state.error }}
     </div>
 
-    <div v-if="Object.keys(downloadProgress).length > 0" class="progress-container">
-      <div v-for="(progress, digest) in downloadProgress" :key="digest" class="layer-progress">
-        <div class="progress-line">
-          <span class="digest">{{ formatDigest(digest) }}:</span>
-          <span class="progress-text">{{ formatProgress(progress) }}</span>
-        </div>
-      </div>
-    </div>
+    <LayerProgress
+      v-if="Object.keys(state.downloadProgress).length > 0"
+      :progress-data="state.downloadProgress"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-interface TokenResponse {
-  token: string;
-}
+import { reactive, computed } from "vue";
+import type {
+  TokenResponse,
+  ManifestResponse,
+  ManifestDetailResponse,
+  DockerPlatform,
+  DownloadProgress,
+} from "~/types/docker";
 
-interface ManifestResponse {
-  manifests: Array<{
-    digest: string;
-    mediaType: string;
-    platform: {
-      architecture: string;
-      os: string;
-      variant?: string;
-    };
-    size: number;
-  }>;
-  mediaType: string;
-  schemaVersion: number;
-}
+// 状态管理
+const state = reactive({
+  imageName: "nginx",
+  tag: "latest",
+  loading: false,
+  error: "",
+  platforms: [] as DockerPlatform[],
+  selectedPlatform: null as DockerPlatform | null,
+  downloadProgress: {} as Record<string, DownloadProgress>,
+  activeDownloads: new Set<string>(),
+  currentToken: "",
+  currentManifest: null as any,
+});
 
-interface ManifestDetailResponse {
-  config: {
-    digest: string;
-    mediaType: string;
-    size: number;
-  };
-  layers: Array<{
-    digest: string;
-    mediaType: string;
-    size: number;
-  }>;
-  mediaType: string;
-  schemaVersion: number;
-}
-
-interface DownloadProgress {
-  downloadedSize: number;
-  totalSize: number;
-  percentage: number;
-}
-
-interface DownloadSummary {
-  total: number;
-  skipped: number;
-  downloaded: number;
-}
-
-const imageName = ref("nginx");
-const tag = ref("latest");
-const selectedArch = ref("");
-const selectedOS = ref("");
-const loading = ref(false);
-const error = ref<string>();
-const downloadProgress = ref<Record<string, DownloadProgress>>({});
-const activeDownloads = ref<Set<string>>(new Set());
-const manifestData = ref<ManifestResponse>();
-const manifestDetails = ref<Record<string, ManifestDetailResponse>>({});
-let currentToken = '';
-let currentManifest: any = null;
-
-// 计算属性：是否可以拉取
-const canPull = computed(() => 
-  imageName.value && 
-  tag.value && 
-  selectedArch.value && 
-  selectedOS.value
+// 计算属性
+const canPull = computed(
+  () =>
+    state.imageName &&
+    state.tag &&
+    state.selectedPlatform?.architecture &&
+    state.selectedPlatform?.os
 );
 
-// 格式化digest显示
-function formatDigest(digest: string) {
-  return digest.replace('sha256:', '').substring(0, 12);
-}
+// 事件处理
+const handlePlatformSelect = (platform: DockerPlatform) => {
+  state.selectedPlatform = platform;
+};
 
-// 格式化进度显示
-function formatProgress(progress: DownloadProgress) {
-  const downloaded = (progress.downloadedSize / 1024 / 1024).toFixed(2);
-  const total = (progress.totalSize / 1024 / 1024).toFixed(2);
-  const bar = '='.repeat(Math.floor(progress.percentage / 2));
-  const space = ' '.repeat(50 - Math.floor(progress.percentage / 2));
-  return `[${bar}>${space}] ${downloaded}MB/${total}MB`;
-}
+// API调用
+const fetchToken = async () => {
+  const response = await $fetch<TokenResponse>("/api/docker/token", {
+    params: {
+      imageName: state.imageName,
+      scope: "pull",
+    },
+  });
+  state.currentToken = response.token;
+};
 
-// 获取并拉取镜像
-async function fetchAndPull() {
-  if (!canPull.value) return;
-  
-  loading.value = true;
-  error.value = undefined;
-  downloadProgress.value = {};
-  currentManifest = null;
-  
-  try {
-    // 1. 获取token
-    const tokenResponse = await $fetch<TokenResponse>("/api/docker/token", {
-      params: {
-        imageName: imageName.value,
-        scope: "pull",
-      },
-    });
-    // 保存token
-    currentToken = tokenResponse.token;
+const fetchManifests = async () => {
+  const response = await $fetch<ManifestResponse>("/api/docker/manifest", {
+    params: {
+      imageName: state.imageName,
+      tag: state.tag,
+      token: state.currentToken,
+    },
+  });
+  state.platforms = response.manifests.map((m) => m.platform);
+  return response;
+};
 
-    // 2. 获取manifest列表
-    const manifests = await $fetch<ManifestResponse>("/api/docker/manifest", {
-      params: {
-        imageName: imageName.value,
-        tag: tag.value,
-        token: currentToken,
-      },
-    });
+const fetchManifestDetail = async (targetManifest: any) => {
+  return await $fetch<ManifestDetailResponse>("/api/docker/manifest-detail", {
+    params: {
+      imageName: state.imageName,
+      digest: targetManifest.digest,
+      token: state.currentToken,
+      mediaType: targetManifest.mediaType,
+    },
+  });
+};
 
-    // 3. 找到匹配的manifest
-    const targetManifest = manifests.manifests.find(m => 
-      m.platform.architecture === selectedArch.value && 
-      m.platform.os === selectedOS.value
-    );
-
-    if (!targetManifest) {
-      throw new Error(`未找到 ${selectedArch.value}/${selectedOS.value} 平台的镜像`);
-    }
-
-    // 4. 获取manifest详情
-    const detail = await $fetch<ManifestDetailResponse>("/api/docker/manifest-detail", {
-      params: {
-        imageName: imageName.value,
-        digest: targetManifest.digest,
-        token: currentToken,
-        mediaType: targetManifest.mediaType
-      },
-    });
-
-    // 保存manifest信息用于后续组装
-    currentManifest = {
-      platform: targetManifest,
-      detail: detail
-    };
-
-    // 开始下载层
-    await downloadAllLayers(detail.layers);
-
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : "拉取失败";
-    console.error("拉取失败:", e);
-  } finally {
-    loading.value = false;
-  }
-}
-
-function isDownloading(digest: string) {
-  return activeDownloads.value.has(digest);
-}
-
-async function downloadLayer(layer: { digest: string; size: number }) {
-  if (isDownloading(layer.digest)) return;
-  
-  activeDownloads.value.add(layer.digest);
-  
-  try {
-    const eventSource = new EventSource(`/api/docker/download-layer?` + 
-      new URLSearchParams({
-        imageName: imageName.value,
-        token: currentToken,
-        digest: layer.digest,
-        size: layer.size.toString()
-      })
-    );
-
-    eventSource.onmessage = (event) => {
-      const progress = JSON.parse(event.data);
-      downloadProgress.value[layer.digest] = progress;
-    };
-
-    eventSource.onerror = () => {
-      eventSource.close();
-      activeDownloads.value.delete(layer.digest);
-    };
-  } catch (e) {
-    console.error(`下载层 ${layer.digest} 失败:`, e);
-    activeDownloads.value.delete(layer.digest);
-  }
-}
-
-const isDownloadingAny = computed(() => activeDownloads.value.size > 0);
-
-async function downloadAllLayers(layers: Array<{ digest: string; size: number; mediaType: string }>) {
-  if (isDownloadingAny.value) return;
-  
-  console.log('开始下载所有层...');
-  console.log('层信息:', layers);
-  
-  try {
-    const eventSource = new EventSource(`/api/docker/pull-image?` + 
-      new URLSearchParams({
-        imageName: imageName.value,
-        token: currentToken,
-        layers: JSON.stringify(layers)
-      })
-    );
-
-    layers.forEach(layer => {
-      console.log(`初始化层 ${layer.digest} 的下载状态`);
-      activeDownloads.value.add(layer.digest);
-      downloadProgress.value[layer.digest] = {
-        downloadedSize: 0,
-        totalSize: layer.size,
-        percentage: 0
-      };
-    });
-
+// 下载处理
+const handleDownloadProgress = async (eventSource: EventSource, layers: any[]) => {
+  return new Promise((resolve, reject) => {
     eventSource.onmessage = async (event) => {
       const data = JSON.parse(event.data);
-      console.log('收到进度更新:', data);
-      
       if (data.summary) {
-        console.log('下载完成，收到汇总信息:', data.summary);
         eventSource.close();
-        layers.forEach(layer => {
-          activeDownloads.value.delete(layer.digest);
+        layers.forEach((layer) => {
+          state.activeDownloads.delete(layer.digest);
         });
-        
-        if (currentManifest) {
-          console.log('开始组装镜像...');
-          await assembleImage(currentManifest.platform, currentManifest.detail);
+        if (state.currentManifest) {
+          await assembleImage();
         }
+        resolve(null);
       } else {
-        // 更新单个层的进度
-        downloadProgress.value[data.layerDigest] = {
+        state.downloadProgress[data.layerDigest] = {
           downloadedSize: data.downloadedSize,
           totalSize: data.totalSize,
-          percentage: data.percentage
+          percentage: data.percentage,
         };
       }
     };
 
     eventSource.onerror = (err) => {
-      console.error('EventSource错误:', err);
+      console.error("EventSource错误:", err);
       eventSource.close();
-      
-      // 清理下载状态
-      layers.forEach(layer => {
-        activeDownloads.value.delete(layer.digest);
+      layers.forEach((layer) => {
+        state.activeDownloads.delete(layer.digest);
       });
+      reject(err);
     };
-  } catch (e) {
-    console.error('下载过程出错:', e);
-    // 清理下载状态
-    layers.forEach(layer => {
-      activeDownloads.value.delete(layer.digest);
-    });
-  }
-}
+  });
+};
 
-async function assembleImage(platformManifest: any, detailManifest: any) {
+const downloadAllLayers = async (layers: any[]) => {
+  if (state.activeDownloads.size > 0) return;
+
+  const eventSource = new EventSource(
+    `/api/docker/pull-image?${new URLSearchParams({
+      imageName: state.imageName,
+      token: state.currentToken,
+      layers: JSON.stringify(layers),
+    })}`
+  );
+
+  layers.forEach((layer) => {
+    state.activeDownloads.add(layer.digest);
+    state.downloadProgress[layer.digest] = {
+      downloadedSize: 0,
+      totalSize: layer.size,
+      percentage: 0,
+    };
+  });
+
+  await handleDownloadProgress(eventSource, layers);
+};
+
+const assembleImage = async () => {
   try {
-    const response = await $fetch('/api/docker/assemble-image', {
+    const response = await $fetch("/api/docker/assemble-image", {
       params: {
-        imageName: imageName.value,
-        tag: tag.value,
-        token: currentToken,
+        imageName: state.imageName,
+        tag: state.tag,
+        token: state.currentToken,
         manifest: JSON.stringify({
-          config: detailManifest.config,
-          layers: detailManifest.layers,
-          platform: platformManifest.platform
-        })
+          config: state.currentManifest.detail.config,
+          layers: state.currentManifest.detail.layers,
+          platform: state.currentManifest.platform.platform,
+        }),
       },
-      responseType: 'blob'
+      responseType: "blob",
     });
 
-    // 创建下载链接
-    const blob = new Blob([response as BlobPart]);
+    const buffer = await (response as unknown as Response).arrayBuffer();
+    const blob = new Blob([buffer], { type: "application/x-tar" });
+    
     const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = `${imageName.value}-${tag.value}.tar`;
+    a.download = `${state.imageName}-${state.tag}.tar`;
     document.body.appendChild(a);
     a.click();
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
-
   } catch (e) {
-    console.error('组装镜像时出错:', e);
+    console.error("组装镜像时出错:", e);
+    state.error = "组装镜像失败";
   }
-}
+};
 
-// 初始加载时获取一次
+// 主要流程
+const handlePull = async () => {
+  if (!canPull.value) return;
+
+  state.loading = true;
+  state.error = "";
+  state.downloadProgress = {};
+  state.currentManifest = null;
+
+  try {
+    await fetchToken();
+    const manifests = await fetchManifests();
+    const targetManifest = manifests.manifests.find(
+      (m) =>
+        m.platform.architecture === state.selectedPlatform?.architecture &&
+        m.platform.os === state.selectedPlatform?.os
+    );
+
+    if (!targetManifest) {
+      throw new Error(
+        `未找到 ${state.selectedPlatform?.architecture}/${state.selectedPlatform?.os} 平台的镜像`
+      );
+    }
+
+    const detail = await fetchManifestDetail(targetManifest);
+    state.currentManifest = { platform: targetManifest, detail };
+    await downloadAllLayers(detail.layers);
+  } catch (e) {
+    state.error = e instanceof Error ? e.message : "拉取失败";
+    console.error("拉取失败:", e);
+  } finally {
+    state.loading = false;
+  }
+};
+
+// 初始化
 onMounted(() => {
   if (canPull.value) {
-    fetchAndPull();
+    handlePull();
   }
 });
 </script>
@@ -345,12 +250,12 @@ onMounted(() => {
   margin-bottom: 20px;
 }
 
-.input-group, .select-group {
+.input-group {
   display: flex;
   gap: 10px;
 }
 
-input, select {
+input {
   padding: 8px;
   border: 1px solid #ddd;
   border-radius: 4px;
@@ -358,9 +263,9 @@ input, select {
   flex: 1;
 }
 
-button {
+.pull-button {
   padding: 8px 16px;
-  background-color: #2196F3;
+  background-color: #2196f3;
   color: white;
   border: none;
   border-radius: 4px;
@@ -368,7 +273,7 @@ button {
   font-family: monospace;
 }
 
-button:disabled {
+.pull-button:disabled {
   background-color: #ccc;
   cursor: not-allowed;
 }
@@ -379,34 +284,5 @@ button:disabled {
   padding: 10px;
   background-color: #ffebee;
   border-radius: 4px;
-}
-
-.progress-container {
-  border: 2px solid #ddd;
-  border-radius: 4px;
-  padding: 10px;
-  margin-top: 20px;
-  background-color: #f8f9fa;
-}
-
-.layer-progress {
-  padding: 5px 0;
-}
-
-.progress-line {
-  display: flex;
-  align-items: center;
-  white-space: pre;
-}
-
-.digest {
-  color: #666;
-  width: 100px;
-  display: inline-block;
-}
-
-.progress-text {
-  flex: 1;
-  font-family: monospace;
 }
 </style>
