@@ -1,0 +1,13 @@
+/* 覆盖 Nuxt UI 的基础样式 */
+.form-input,
+.form-select {
+  @apply border border-gray-200 hover:border-gray-300 focus:border-gray-400 !important;
+  @apply ring-0 focus:ring-0 !important;
+  @apply transition-colors duration-200 !important;
+}
+
+/* 确保边框在所有状态下可见 */
+.form-input:not(:focus),
+.form-select:not(:focus) {
+  @apply border-gray-200 !important;
+} 

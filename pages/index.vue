@@ -1,80 +1,137 @@
 <template>
-  <div class="max-w-800px mx-auto p-5 font-mono">
-    <div class="flex flex-col gap-3 mb-5">
-      <div class="flex gap-3">
-        <input 
-          v-model="state.imageName" 
-          placeholder="镜像名称 (例如: nginx)" 
-          class="input-base flex-1"
-        />
-        <input 
-          v-model="state.tag" 
-          placeholder="标签 (例如: latest)" 
-          class="input-base flex-1"
-        />
-      </div>
-      
-      <button 
-        v-if="!state.platforms.length"
-        @click="initPlatforms" 
-        class="btn-green"
-        :disabled="state.loading"
-      >
-        <div class="i-carbon-container-software mr-2" />
-        {{ state.loading ? "获取平台信息..." : "获取平台信息" }}
-      </button>
-
-      <PlatformSelector
-        v-else
-        :platforms="state.platforms"
-        @update:platform="handlePlatformSelect"
-      />
-
-      <button
-        @click="handlePull"
-        :disabled="state.loading || !canPull"
-        class="btn-blue"
-      >
-        <div class="i-carbon-download mr-2" />
-        {{ state.loading ? "处理中..." : "拉取镜像" }}
-      </button>
-    </div>
-
-    <div 
-      v-if="state.error" 
-      class="my-3 p-3 bg-red-50 border-2 border-red-500 rounded-lg text-red-600"
+  <UContainer class="max-w-2xl py-10">
+    <Transition
+      appear
+      enter-active-class="transition duration-700 ease-out"
+      enter-from-class="opacity-0 -translate-y-4"
+      enter-to-class="opacity-100 translate-y-0"
     >
-      <div class="i-carbon-warning-filled mr-2" />
-      {{ state.error }}
-    </div>
-
-    <div 
-      v-if="state.downloadComplete" 
-      class="my-5 p-5 bg-green-50 border-2 border-green-500 rounded-lg flex items-start gap-4"
-    >
-      <div class="w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center text-lg">
-        <div class="i-carbon-checkmark" />
+      <div class="text-center mb-12">
+        <h1 class="text-3xl font-bold tracking-tight">Docker Registry Puller</h1>
+        <p class="text-gray-500 mt-2">Pull and download Docker images from registry</p>
       </div>
-      <div class="flex-1">
-        <h3 class="text-green-800 text-lg font-bold mb-2">下载完成！</h3>
-        <p class="text-green-700">
-          总共: {{ state.downloadSummary?.total }} 层
-          <span class="text-gray-600 text-sm">
-            (新下载: {{ state.downloadSummary?.downloaded }},
-            已存在: {{ state.downloadSummary?.skipped }})
-          </span>
-        </p>
-        <p class="text-gray-600 text-sm mt-3">
-          镜像文件已开始下载，请检查浏览器下载列表。
-        </p>
-      </div>
-    </div>
+    </Transition>
+    
+    <div class="space-y-6">
+      <Transition
+        appear
+        enter-active-class="transition duration-500 delay-200 ease-out"
+        enter-from-class="opacity-0 -translate-y-4"
+        enter-to-class="opacity-100 translate-y-0"
+      >
+        <div class="bg-gray-50 p-6 rounded-xl transition-shadow duration-300 hover:shadow-md">
+          <div class="grid grid-cols-2 gap-4 mb-4">
+            <UInput
+              v-model="state.imageName"
+              placeholder="Image Name (e.g., nginx)"
+              class="w-full"
+              @input="handleImageChange"
+            />
+            <UInput
+              v-model="state.tag"
+              placeholder="Tag (e.g., latest)"
+              class="w-full focus:border-gray-400 border-gray-200 !ring-0"
+              @input="handleImageChange"
+            />
+          </div>
+          
+          <UButton
+            block
+            @click="initPlatforms"
+            :disabled="!canFetchPlatforms"
+            color="gray"
+            variant="solid"
+            class="transition-all duration-200 active:scale-[0.98]"
+          >
+            获取平台信息
+          </UButton>
+        </div>
+      </Transition>
 
-    <LayerProgress
-      v-if="Object.keys(state.downloadProgress).length > 0 && !state.downloadComplete"
-      :progress-data="state.downloadProgress"
-    />
-  </div>
+      <Transition
+        enter-active-class="transition-all duration-300 ease-out"
+        enter-from-class="opacity-0 -translate-y-4"
+        enter-to-class="opacity-100 translate-y-0"
+        leave-active-class="transition-all duration-200 ease-in"
+        leave-from-class="opacity-100 translate-y-0"
+        leave-to-class="opacity-0 -translate-y-4"
+      >
+        <div v-if="state.platforms.length" class="bg-gray-50 p-6 rounded-xl transition-shadow duration-300 hover:shadow-md">
+          <PlatformSelector
+            :platforms="state.platforms"
+            @update:platform="handlePlatformSelect"
+          />
+          
+          <UButton
+            block
+            class="mt-4 transition-all duration-200 active:scale-[0.98]"
+            @click="handlePull"
+            :disabled="!canPull"
+            color="gray"
+            variant="solid"
+          >
+            拉取镜像
+          </UButton>
+        </div>
+      </Transition>
+
+      <Transition
+        enter-active-class="transition-all duration-300 ease-out"
+        enter-from-class="opacity-0 -translate-y-4"
+        enter-to-class="opacity-100 translate-y-0"
+        leave-active-class="transition-all duration-200 ease-in"
+        leave-from-class="opacity-0"
+        leave-to-class="opacity-0 -translate-y-4"
+      >
+        <UAlert
+          v-if="state.error"
+          color="red"
+          variant="soft"
+          title="Error"
+          :description="state.error"
+        />
+      </Transition>
+
+      <Transition
+        enter-active-class="transition-all duration-300 ease-out"
+        enter-from-class="opacity-0 -translate-y-4"
+        enter-to-class="opacity-100 translate-y-0"
+      >
+        <UCard
+          v-if="state.downloadComplete"
+          class="bg-gray-50 transition-shadow duration-300 hover:shadow-md"
+        >
+          <template #header>
+            <h3 class="text-lg font-bold">Download Complete!</h3>
+          </template>
+
+          <div class="space-y-2">
+            <p class="text-gray-700">
+              Total: {{ state.downloadSummary?.total }} layers
+              <span class="text-sm text-gray-500">
+                (New Download: {{ state.downloadSummary?.downloaded }},
+                Already Exists: {{ state.downloadSummary?.skipped }})
+              </span>
+            </p>
+            <p class="text-sm text-gray-500">
+              Image file has started downloading, please check your browser download list.
+            </p>
+          </div>
+        </UCard>
+      </Transition>
+
+      <Transition
+        enter-active-class="transition-all duration-300 ease-out"
+        enter-from-class="opacity-0"
+        enter-to-class="opacity-100"
+      >
+        <LayerProgress
+          v-if="Object.keys(state.downloadProgress).length > 0 && !state.downloadComplete"
+          :progress-data="state.downloadProgress"
+        />
+      </Transition>
+    </div>
+  </UContainer>
 </template>
 
 <script setup lang="ts">
@@ -87,10 +144,10 @@ import type {
   DownloadProgress,
 } from "~/types/docker";
 
-// 状态管理
+// 状态处理
 const state = reactive({
-  imageName: "nginx",
-  tag: "latest",
+  imageName: "",
+  tag: "",
   loading: false,
   error: "",
   platforms: [] as DockerPlatform[],
@@ -114,6 +171,10 @@ const canPull = computed(
     state.tag &&
     state.selectedPlatform?.architecture &&
     state.selectedPlatform?.os
+);
+
+const canFetchPlatforms = computed(() => 
+  state.imageName && state.tag && !state.loading
 );
 
 // 事件处理
@@ -289,13 +350,15 @@ const handlePull = async () => {
 
 // 初始化平台信息
 const initPlatforms = async () => {
-  if (!state.imageName || !state.tag) {
+  if (!canFetchPlatforms.value) {
     state.error = "请输入镜像名称和标签";
     return;
   }
 
   state.loading = true;
   state.error = "";
+  state.platforms = [];
+  state.selectedPlatform = null;
   
   try {
     await fetchToken();
@@ -309,126 +372,60 @@ const initPlatforms = async () => {
   }
 };
 
-// 修改初始化逻辑
-onMounted(() => {
-  // 移除自动拉取，改为手动获取平台信息
-  if (state.imageName && state.tag) {
-    initPlatforms();
-  }
-});
+// 新增处理函数
+const handleImageChange = () => {
+  state.platforms = [];
+  state.selectedPlatform = null;
+  state.error = "";
+  state.downloadProgress = {};
+  state.downloadComplete = false;
+  state.downloadSummary = null;
+};
 </script>
 
-<style scoped>
-.container {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 20px;
-  font-family: monospace;
+<style>
+.page-enter-active,
+.page-leave-active {
+  transition: all 0.3s ease-out;
 }
 
-.form-section {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-bottom: 20px;
+.page-enter-from,
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
 }
 
-.input-group {
-  display: flex;
-  gap: 10px;
+.u-button {
+  position: relative;
+  overflow: hidden;
 }
 
-input {
-  padding: 8px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-family: monospace;
-  flex: 1;
+.u-button::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.5);
+  opacity: 0;
+  border-radius: 100%;
+  transform: scale(1, 1) translate(-50%);
+  transform-origin: 50% 50%;
 }
 
-.pull-button {
-  padding: 8px 16px;
-  background-color: #2196f3;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-family: monospace;
+.u-button:active::after {
+  animation: ripple 0.4s ease-out;
 }
 
-.pull-button:disabled {
-  background-color: #ccc;
-  cursor: not-allowed;
-}
-
-.error-message {
-  color: red;
-  margin: 10px 0;
-  padding: 10px;
-  background-color: #ffebee;
-  border-radius: 4px;
-}
-
-.init-button {
-  padding: 8px 16px;
-  background-color: #4caf50;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-family: monospace;
-}
-
-.init-button:disabled {
-  background-color: #ccc;
-  cursor: not-allowed;
-}
-
-.success-message {
-  margin: 20px 0;
-  padding: 20px;
-  background-color: #e8f5e9;
-  border: 2px solid #4caf50;
-  border-radius: 4px;
-  display: flex;
-  align-items: flex-start;
-  gap: 15px;
-}
-
-.success-icon {
-  background-color: #4caf50;
-  color: white;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-}
-
-.success-text {
-  flex: 1;
-}
-
-.success-text h3 {
-  margin: 0 0 10px 0;
-  color: #2e7d32;
-}
-
-.success-text p {
-  margin: 5px 0;
-  color: #1b5e20;
-}
-
-.summary-detail {
-  color: #666;
-  font-size: 0.9em;
-}
-
-.hint-text {
-  font-size: 0.9em;
-  color: #666;
-  margin-top: 10px;
+@keyframes ripple {
+  0% {
+    transform: scale(0, 0);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(20, 20);
+    opacity: 0;
+  }
 }
 </style>

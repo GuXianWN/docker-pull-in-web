@@ -10,6 +10,7 @@
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
+    "@nuxt/ui": "^2.20.0",
     "axios": "^1.7.9",
     "https-proxy-agent": "^7.0.6",
     "nuxt": "^3.14.1592",
