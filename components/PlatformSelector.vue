@@ -1,34 +1,27 @@
 <template>
-  <div class="flex gap-3">
-    <select 
-      v-model="selectedArch" 
-      @change="handleChange"
-      class="input-base flex-1"
-    >
-      <option value="">选择架构</option>
-      <option 
-        v-for="arch in availableArchitectures" 
-        :key="arch" 
-        :value="arch"
-      >
-        {{ arch }}
-      </option>
-    </select>
-    <select 
-      v-model="selectedOS" 
-      @change="handleChange"
-      class="input-base flex-1"
-    >
-      <option value="">选择操作系统</option>
-      <option 
-        v-for="os in availableOS" 
-        :key="os" 
-        :value="os"
-      >
-        {{ os }}
-      </option>
-    </select>
-  </div>
+  <Transition
+    appear
+    enter-active-class="transition-all duration-300 ease-out"
+    enter-from-class="opacity-0 -translate-y-4"
+    enter-to-class="opacity-100 translate-y-0"
+  >
+    <div class="flex gap-3">
+      <USelect
+        v-model="selectedArch"
+        :options="availableArchitectures"
+        placeholder="选择架构"
+        class="flex-1 focus:border-gray-400 border-gray-200 !ring-0"
+        @update:model-value="handleChange"
+      />
+      <USelect
+        v-model="selectedOS"
+        :options="availableOS"
+        placeholder="选择操作系统"
+        class="flex-1 focus:border-gray-400 border-gray-200 !ring-0"
+        @update:model-value="handleChange"
+      />
+    </div>
+  </Transition>
 </template>
 
 <script setup lang="ts">
@@ -65,19 +58,4 @@ const handleChange = () => {
     });
   }
 };
-</script>
-
-<style scoped>
-.select-group {
-  display: flex;
-  gap: 10px;
-}
-
-select {
-  padding: 8px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-family: monospace;
-  flex: 1;
-}
-</style> 
+</script> 
