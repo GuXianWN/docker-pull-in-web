@@ -1,10 +1,6 @@
-import axios from "axios";
-import { getProxyAgent } from "~/utils/proxy";
 import { createWriteStream, existsSync, mkdirSync, statSync } from "fs";
 import { join } from "path";
-import { promises as fs } from "fs";
-
-const enableCache = process.env.ENABLE_CACHE !== 'false'; // 默认启用缓存
+import axiosInstance from "~/server/config/axios";
 
 // 请求参数接口
 type QueryParams = {
@@ -118,13 +114,11 @@ export default defineEventHandler(async (event) => {
         };
       }
 
-      const httpsAgent = getProxyAgent();
-      const response = await axios.get(
-        `https://registry-1.docker.io/v2/library/${imageName}/blobs/${layer.digest}`,
+      const response = await axiosInstance.get(
+        `https://registry-1.docker.io/v2/${imageName}/blobs/${layer.digest}`,
         {
           headers: { Authorization: `Bearer ${token}` },
           responseType: "stream",
-          ...(httpsAgent && { httpsAgent }),
         }
       );
 
@@ -228,15 +222,6 @@ export default defineEventHandler(async (event) => {
       })}\n\n`
     );
 
-    // 发送下载汇总信息后，判断是否需要清理缓存
-    if (!enableCache) {
-      try {
-        await fs.rm(downloadDir, { recursive: true, force: true });
-        console.log(`已清理下载缓存: ${downloadDir}`);
-      } catch (e) {
-        console.warn('清理下载缓存失败:', e);
-      }
-    }
 
     return;
   } catch (error: any) {
