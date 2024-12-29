@@ -1,7 +1,6 @@
-import axios from "axios";
-import { getProxyAgent } from "~/utils/proxy";
-
 // 请求参数接口
+import axiosInstance from "~/server/config/axios";
+
 type QueryParams = {
   imageName: string;
   tag: string;
@@ -35,16 +34,14 @@ export default defineEventHandler(async (event): Promise<ManifestResponse> => {
   const { imageName, tag, token } = query;
 
   const fetchManifest = async () => {
-    const httpsAgent = getProxyAgent();
-    const response = await axios.get<ManifestResponse>(
-      `https://registry-1.docker.io/v2/library/${imageName}/manifests/${tag}`,
+    const response = await axiosInstance.get<ManifestResponse>(
+      `https://registry-1.docker.io/v2/${imageName}/manifests/${tag}`,
       {
         headers: {
           Authorization: `Bearer ${token}`,
           Accept:
             "application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.index.v1+json",
         },
-        ...(httpsAgent && { httpsAgent }),
       }
     );
     return response.data;

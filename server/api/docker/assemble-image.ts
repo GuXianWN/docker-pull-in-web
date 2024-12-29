@@ -1,8 +1,7 @@
-import axios from "axios";
-import { getProxyAgent } from "~/utils/proxy";
 import { writeFileSync, promises as fs } from "fs";
 import { join } from "path";
 import * as tar from "tar";
+import axiosInstance from "~/server/config/axios";
 
 // 请求参数接口
 type AssembleParams = {
@@ -67,12 +66,10 @@ export default defineEventHandler(async (event) => {
 
   // 获取配置文件
   const fetchConfig = async () => {
-    const httpsAgent = getProxyAgent();
-    const response = await axios.get(
-      `https://registry-1.docker.io/v2/library/${imageName}/blobs/${manifest.config.digest}`,
+    const response = await axiosInstance.get(
+      `https://registry-1.docker.io/v2/${imageName}/blobs/${manifest.config.digest}`,
       {
         headers: { Authorization: `Bearer ${token}` },
-        ...(httpsAgent && { httpsAgent }),
       }
     );
     return response.data;
