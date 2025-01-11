@@ -1,0 +1,50 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build-and-push:
+    environment: PROD  # 指定环境名称
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. 检出代码
+      - uses: actions/checkout@v3
+
+      # 2. 安装 pnpm
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      # 3. 设置 Node.js 环境
+      - name: Use Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          cache: 'pnpm'
+
+      # 4. 安装依赖
+      - name: Install dependencies
+        run: pnpm install
+
+      # 5. 构建项目
+      - name: Build project
+        run: pnpm run build
+
+      # 6. 登录 Docker Hub
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      # 7. 构建 Docker 镜像
+      - name: Build Docker image
+        run: docker build -t ${{ secrets.DOCKER_HUB_USERNAME }}/docker-pull-in-web:latest .
+
+      # 8. 推送 Docker 镜像到 Docker Hub
+      - name: Push Docker image
+        run: docker push ${{ secrets.DOCKER_HUB_USERNAME }}/docker-pull-in-web:latest
