@@ -34,7 +34,7 @@ docker run -d \
   -v ./downloads:/app/downloads \
   -v ./tmp:/app/tmp \
   -e NUXT_PORT=3000 \
-  yuchenrx/docker-pull-in-web:latest
+  guxian/docker-pull-in-web:latest
 ```
 
 ### 环境变量配置

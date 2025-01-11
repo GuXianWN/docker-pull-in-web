@@ -2,9 +2,7 @@ version: '3.8'
 
 services:
   app:
-    build: 
-      context: .
-      dockerfile: Dockerfile
+    image: guxian/docker-pull-in-web:latest
     container_name: docker-puller
     volumes:
       - ./downloads:/app/downloads
