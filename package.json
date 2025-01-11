@@ -1,5 +1,5 @@
 {
-  "name": "nuxt-app",
+  "name": "docker-pull-in-web",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,8 +12,10 @@
   "dependencies": {
     "@nuxt/ui": "^2.20.0",
     "axios": "^1.7.9",
+    "docker-pull-in-web": "file:",
     "https-proxy-agent": "^7.0.6",
     "nuxt": "^3.14.1592",
+    "nuxt-app": "file:",
     "tar": "^7.4.3",
     "vue": "latest",
     "vue-router": "latest"
