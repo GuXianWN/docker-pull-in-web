@@ -2,11 +2,9 @@
 
 一个优雅的 Docker 镜像拉取工具,基于 Nuxt.js 构建。让你能够方便地从web页面拉取并下载 Docker 镜像。
 
+[![](https://bb-embed.herokuapp.com/embed?v=BV1jS4y1w7SW)](https://player.bilibili.com/player.html?aid=683633468&bvid=BV1jS4y1w7SW&cid=711074429&page=1)
 
-
-
-
-[MIT License](LICENSE)
+![video.gif](md/video.gif)
 
 ## 部署指南
 
@@ -44,3 +42,6 @@ docker run -d \
 | NUXT_PORT   | 3000                  | 服务监听端口  |
 | HTTP_PROXY  | http://127.0.0.1:7890 | HTTP代理地址  |
 | HTTPS_PROXY | http://127.0.0.1:7890 | HTTPS代理地址 |
+
+
+[MIT License](LICENSE)
