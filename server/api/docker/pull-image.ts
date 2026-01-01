@@ -51,9 +51,13 @@ const LAYER_TIMEOUT_MS = Math.max(
 export default defineEventHandler(async (event) => {
   // 设置SSE响应头
   setHeader(event, "Content-Type", "text/event-stream");
-  setHeader(event, "Cache-Control", "no-cache");
+  setHeader(event, "Cache-Control", "no-cache, no-transform");
   setHeader(event, "Connection", "keep-alive");
+  setHeader(event, "X-Accel-Buffering", "no");
+  setHeader(event, "Content-Encoding", "identity");
   event.node.res.flushHeaders?.();
+  event.node.res.write(`:${" ".repeat(2048)}\n\n`);
+  (event.node.res as any).flush?.();
 
   const query = getQuery(event);
   const { imageName: rawImageName, token, layers: layersJson } = query as unknown as QueryParams;
@@ -110,6 +114,7 @@ export default defineEventHandler(async (event) => {
       })}\n\n`
     );
     (event.node.res as any).flush?.();
+    event.node.res.end();
   };
 
   // 下载单个层
@@ -272,6 +277,7 @@ export default defineEventHandler(async (event) => {
       })}\n\n`
     );
     (event.node.res as any).flush?.();
+    event.node.res.end();
     logger.info("pull complete", {
       imageName,
       total: results.length,
