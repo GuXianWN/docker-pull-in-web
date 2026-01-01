@@ -1,6 +1,7 @@
 import { writeFileSync, promises as fs } from "fs";
 import { join } from "path";
 import * as tar from "tar";
+import { sendStream } from "h3";
 import axiosInstance from "~/server/config/axios";
 import {
   normalizeImageName,
@@ -178,39 +179,43 @@ export default defineEventHandler(async (event) => {
       `attachment; filename="${fileBaseName}-${tag}.tar"`
     );
 
-    // 创建tar流并转换为buffer
-    const createTarBuffer = async () => {
-      const tarStream = tar.create(
-        {
-          cwd: tmpDir,
-          preservePaths: true,
-          follow: true,
-          noPax: true,
-          noMtime: true,
-          gzip: false,
-        },
-        ["."]
-      );
+    const tarStream = tar.create(
+      {
+        cwd: tmpDir,
+        preservePaths: true,
+        follow: true,
+        noPax: true,
+        noMtime: true,
+        gzip: false,
+      },
+      ["."]
+    );
 
-      const chunks: Buffer[] = [];
-      for await (const chunk of tarStream) {
-        chunks.push(Buffer.from(chunk));
-      }
-      return Buffer.concat(chunks);
+    let cleaned = false;
+    const cleanup = async () => {
+      if (cleaned) return;
+      cleaned = true;
+      await fs.rm(tmpDir, { recursive: true, force: true });
     };
 
-    const buffer = await createTarBuffer();
-
-    // 清理临时目录
-    await fs.rm(tmpDir, { recursive: true, force: true });
-
-    logger.info("assemble complete", {
-      imageName,
-      tag,
-      bytes: buffer.length,
-      elapsedMs: Date.now() - startedAt,
+    tarStream.on("close", async () => {
+      await cleanup();
+      logger.info("assemble complete", {
+        imageName,
+        tag,
+        elapsedMs: Date.now() - startedAt,
+      });
     });
-    return buffer;
+    tarStream.on("error", async (err) => {
+      await cleanup();
+      logger.error("assemble stream error", {
+        imageName,
+        tag,
+        message: String(err?.message || err),
+      });
+    });
+
+    return sendStream(event, tarStream);
   } catch (error: any) {
     // 清理临时目录
     try {

@@ -120,6 +120,7 @@ import type {
   DownloadProgress,
 } from "~/types/docker";
 
+// #region State
 const imageName = ref("");
 const tag = ref("");
 const loading = ref(false);
@@ -137,7 +138,9 @@ const downloadSummary = ref<{
   downloaded: number;
 } | null>(null);
 const activeEventSource = ref<EventSource | null>(null);
+// #endregion
 
+// #region Computed
 const canPull = computed(
   () =>
     imageName.value &&
@@ -149,29 +152,46 @@ const canPull = computed(
 const canFetchPlatforms = computed(
   () => imageName.value && tag.value && !loading.value
 );
+// #endregion
 
-const resetState = () => {
+// #region Reset Helpers
+const clearActiveEventSource = () => {
   if (activeEventSource.value) {
     activeEventSource.value.close();
     activeEventSource.value = null;
   }
+};
+
+const resetDownloadState = () => {
   activeDownloads.value.clear();
-  platforms.value = [];
-  selectedPlatform.value = null;
-  error.value = "";
   downloadProgress.value = {};
   downloadComplete.value = false;
   downloadSummary.value = null;
+  currentManifest.value = null;
 };
 
+const resetSelectionState = () => {
+  platforms.value = [];
+  selectedPlatform.value = null;
+};
+
+const resetAllState = () => {
+  clearActiveEventSource();
+  resetDownloadState();
+  resetSelectionState();
+  error.value = "";
+};
+// #endregion
+
 watch([imageName, tag], () => {
-  resetState();
+  resetAllState();
 });
 
 const handlePlatformSelect = (platform: DockerPlatform) => {
   selectedPlatform.value = platform;
 };
 
+// #region API
 const fetchToken = async () => {
   const response = await $fetch<TokenResponse>("/api/docker/token", {
     params: {
@@ -204,7 +224,9 @@ const fetchManifestDetail = async (targetManifest: any) => {
     },
   });
 };
+// #endregion
 
+// #region Download
 const handleDownloadProgress = async (eventSource: EventSource, layers: any[]) => {
   return new Promise((resolve, reject) => {
     eventSource.onmessage = async (event) => {
@@ -275,7 +297,9 @@ const downloadAllLayers = async (layers: any[]) => {
 
   await handleDownloadProgress(eventSource, layers);
 };
+// #endregion
 
+// #region Assemble
 const assembleImage = async () => {
   try {
     const response = await $fetch("/api/docker/assemble-image", {
@@ -309,16 +333,15 @@ const assembleImage = async () => {
     error.value = "组装镜像失败";
   }
 };
+// #endregion
 
+// #region Actions
 const handlePull = async () => {
   if (!canPull.value) return;
 
   loading.value = true;
   error.value = "";
-  downloadProgress.value = {};
-  currentManifest.value = null;
-  downloadComplete.value = false;
-  downloadSummary.value = null;
+  resetDownloadState();
 
   try {
     await fetchToken();
@@ -354,9 +377,9 @@ const initPlatforms = async () => {
 
   loading.value = true;
   error.value = "";
-  platforms.value = [];
-  selectedPlatform.value = null;
-
+  resetSelectionState();
+  resetDownloadState();
+  
   try {
     await fetchToken();
     const manifests = await fetchManifests();
@@ -368,11 +391,11 @@ const initPlatforms = async () => {
     loading.value = false;
   }
 };
+// #endregion
 
+// #region Lifecycle
 onBeforeUnmount(() => {
-  if (activeEventSource.value) {
-    activeEventSource.value.close();
-    activeEventSource.value = null;
-  }
+  clearActiveEventSource();
 });
+// #endregion
 </script>
