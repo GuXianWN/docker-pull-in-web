@@ -1,6 +1,7 @@
 // 请求参数接口
 import axiosInstance from "~/server/config/axios";
 import { normalizeImageName } from "~/server/utils/imageName";
+import { logger } from "~/server/utils/logger";
 
 type QueryParams = {
   imageName?: string;
@@ -25,6 +26,8 @@ export default defineEventHandler(async (event): Promise<ApiResponse> => {
   const imageName = normalizeImageName(rawImageName);
   const scope = query.scope || "pull";
 
+  logger.info("token request", { imageName, scope });
+
   const fetchToken = async () => {
     const response = await axiosInstance.get<DockerAuthResponse>(
       "https://auth.docker.io/token",
@@ -40,10 +43,12 @@ export default defineEventHandler(async (event): Promise<ApiResponse> => {
 
   try {
     const authResponse = await fetchToken();
+    logger.info("token success", { imageName, scope });
     return {
       token: authResponse.token,
     };
   } catch (error: any) {
+    logger.error("token failed", { imageName, scope, message: error.message });
     throw createError({
       statusCode: error.response?.status || 500,
       message: error.message,

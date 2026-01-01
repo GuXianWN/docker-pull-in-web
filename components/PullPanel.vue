@@ -209,6 +209,15 @@ const handleDownloadProgress = async (eventSource: EventSource, layers: any[]) =
   return new Promise((resolve, reject) => {
     eventSource.onmessage = async (event) => {
       const data = JSON.parse(event.data);
+      if (data.error) {
+        eventSource.close();
+        layers.forEach((layer) => {
+          activeDownloads.value.delete(layer.digest);
+        });
+        error.value = data.error;
+        reject(new Error(data.error));
+        return;
+      }
       if (data.summary) {
         eventSource.close();
         layers.forEach((layer) => {

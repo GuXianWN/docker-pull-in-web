@@ -7,6 +7,7 @@ import {
   getRepoTagName,
   getSafeFileBaseName,
 } from "~/server/utils/imageName";
+import { logger } from "~/server/utils/logger";
 
 // 请求参数接口
 type AssembleParams = {
@@ -67,6 +68,12 @@ export default defineEventHandler(async (event) => {
   const repoTagName = getRepoTagName(rawImageName || imageName);
   const fileBaseName = getSafeFileBaseName(rawImageName || imageName);
   const manifest = JSON.parse(manifestJson) as DockerManifest;
+  const startedAt = Date.now();
+  logger.info("assemble start", {
+    imageName,
+    tag,
+    layers: manifest.layers?.length || 0,
+  });
 
   // 创建临时目录
   const tmpDir = join(process.cwd(), "tmp", `${imageName}-${Date.now()}`);
@@ -197,6 +204,12 @@ export default defineEventHandler(async (event) => {
     // 清理临时目录
     await fs.rm(tmpDir, { recursive: true, force: true });
 
+    logger.info("assemble complete", {
+      imageName,
+      tag,
+      bytes: buffer.length,
+      elapsedMs: Date.now() - startedAt,
+    });
     return buffer;
   } catch (error: any) {
     // 清理临时目录
@@ -206,6 +219,12 @@ export default defineEventHandler(async (event) => {
       console.warn("清理临时目录失败:", e);
     }
 
+    logger.error("assemble failed", {
+      imageName,
+      tag,
+      message: error.message,
+      elapsedMs: Date.now() - startedAt,
+    });
     throw createError({
       statusCode: 500,
       message: error.message,

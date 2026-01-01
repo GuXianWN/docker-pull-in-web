@@ -1,6 +1,7 @@
 // 请求参数接口
 import axiosInstance from "~/server/config/axios";
 import { normalizeImageName } from "~/server/utils/imageName";
+import { logger } from "~/server/utils/logger";
 
 type QueryParams = {
   imageName: string;
@@ -38,6 +39,8 @@ export default defineEventHandler(
     const imageName = normalizeImageName(rawImageName);
     const { digest, token, mediaType } = query;
 
+    logger.info("manifest detail request", { imageName, digest });
+
     const fetchManifestDetail = async () => {
       const response = await axiosInstance.get<ManifestDetailResponse>(
         `https://registry-1.docker.io/v2/${imageName}/manifests/${digest}`,
@@ -52,8 +55,19 @@ export default defineEventHandler(
     };
 
     try {
-      return await fetchManifestDetail();
+      const result = await fetchManifestDetail();
+      logger.info("manifest detail success", {
+        imageName,
+        digest,
+        layers: result.layers?.length || 0,
+      });
+      return result;
     } catch (error: any) {
+      logger.error("manifest detail failed", {
+        imageName,
+        digest,
+        message: error.message,
+      });
       throw createError({
         statusCode: error.response?.status || 500,
         message: error.message,

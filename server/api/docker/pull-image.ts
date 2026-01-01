@@ -2,6 +2,7 @@ import { createWriteStream, existsSync, mkdirSync, statSync } from "fs";
 import { join } from "path";
 import axiosInstance from "~/server/config/axios";
 import { normalizeImageName } from "~/server/utils/imageName";
+import { logger } from "~/server/utils/logger";
 
 // 请求参数接口
 type QueryParams = {
@@ -42,6 +43,10 @@ type FileInfo = {
 };
 
 const CONCURRENT_DOWNLOADS = 3;
+const LAYER_TIMEOUT_MS = Math.max(
+  1000,
+  parseInt(process.env.PULL_LAYER_TIMEOUT_MS || "600000", 10)
+);
 
 export default defineEventHandler(async (event) => {
   // 设置SSE响应头
@@ -62,6 +67,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const layers = JSON.parse(layersJson) as DockerLayer[];
+  logger.info("pull start", { imageName, layers: layers.length, concurrency: CONCURRENT_DOWNLOADS });
 
   // 创建下载目录
   const downloadDir = join(process.cwd(), "downloads", imageName);
@@ -96,9 +102,22 @@ export default defineEventHandler(async (event) => {
     event.node.res.write(`data: ${JSON.stringify(progress)}\n\n`);
     (event.node.res as any).flush?.();
   };
+  const sendError = (message: string, details?: string[]) => {
+    event.node.res.write(
+      `data: ${JSON.stringify({
+        error: message,
+        details,
+      })}\n\n`
+    );
+    (event.node.res as any).flush?.();
+  };
 
   // 下载单个层
   const downloadLayer = async (layer: DockerLayer): Promise<LayerDownloadResult> => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort(new Error("timeout"));
+    }, LAYER_TIMEOUT_MS);
     try {
       const fileInfo = checkLayerFile(layer);
 
@@ -123,6 +142,7 @@ export default defineEventHandler(async (event) => {
         {
           headers: { Authorization: `Bearer ${token}` },
           responseType: "stream",
+          signal: controller.signal,
         }
       );
 
@@ -149,6 +169,8 @@ export default defineEventHandler(async (event) => {
       });
 
       await new Promise((resolve, reject) => {
+        const onAbort = () => reject(new Error("timeout"));
+        controller.signal.addEventListener("abort", onAbort, { once: true });
         writeStream.on("finish", resolve);
         writeStream.on("error", reject);
         response.data.on("error", reject);
@@ -162,11 +184,20 @@ export default defineEventHandler(async (event) => {
         skipped: false,
       };
     } catch (error: any) {
+      if (String(error?.message).toLowerCase().includes("timeout")) {
+        return {
+          success: false,
+          digest: layer.digest,
+          error: "timeout",
+        };
+      }
       return {
         success: false,
         digest: layer.digest,
         error: error.message,
       };
+    } finally {
+      clearTimeout(timeoutId);
     }
   };
 
@@ -204,9 +235,27 @@ export default defineEventHandler(async (event) => {
     // 检查下载结果
     const failedDownloads = results.filter((result) => !result.success);
     if (failedDownloads.length > 0) {
-      throw new Error(
-        `部分层下载失败: ${failedDownloads.map((f) => f.digest).join(", ")}`
+      const timedOut = failedDownloads.filter((f) => f.error === "timeout");
+      if (timedOut.length > 0) {
+        sendError(
+          `部分层下载超时（${timedOut.length} 个），请重试`,
+          timedOut.map((f) => f.digest)
+        );
+        logger.warn("pull timeout", {
+          imageName,
+          timedOut: timedOut.length,
+        });
+        return;
+      }
+      sendError(
+        `部分层下载失败（${failedDownloads.length} 个），请重试`,
+        failedDownloads.map((f) => f.digest)
       );
+      logger.error("pull failed layers", {
+        imageName,
+        failed: failedDownloads.length,
+      });
+      return;
     }
 
     // 发送下载汇总信息
@@ -223,10 +272,17 @@ export default defineEventHandler(async (event) => {
       })}\n\n`
     );
     (event.node.res as any).flush?.();
+    logger.info("pull complete", {
+      imageName,
+      total: results.length,
+      skipped: skippedLayers,
+      downloaded: downloadedLayers,
+    });
 
 
     return;
   } catch (error: any) {
+    logger.error("pull failed", { imageName, message: error.message });
     throw createError({
       statusCode: 500,
       message: error.message,

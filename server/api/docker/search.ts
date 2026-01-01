@@ -1,4 +1,5 @@
 import axiosInstance from "~/server/config/axios";
+import { logger } from "~/server/utils/logger";
 
 type QueryParams = {
   query?: string;
@@ -49,6 +50,8 @@ export default defineEventHandler(async (event): Promise<ApiSearchResponse> => {
   const page = Math.max(1, parseInt(query.page || "1", 10));
   const pageSize = Math.min(25, Math.max(1, parseInt(query.pageSize || "10", 10)));
 
+  logger.info("search request", { query: q, page, pageSize });
+
   try {
     const response = await axiosInstance.get<HubSearchResponse>(
       "https://hub.docker.com/v2/search/repositories/",
@@ -80,6 +83,7 @@ export default defineEventHandler(async (event): Promise<ApiSearchResponse> => {
       results: sorted,
     };
   } catch (error: any) {
+    logger.error("search failed", { query: q, page, pageSize, message: error.message });
     throw createError({
       statusCode: error.response?.status || 500,
       message: error.message,

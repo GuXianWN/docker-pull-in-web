@@ -1,5 +1,6 @@
 import axiosInstance from "~/server/config/axios";
 import { normalizeImageName } from "~/server/utils/imageName";
+import { logger } from "~/server/utils/logger";
 
 type QueryParams = {
   imageName?: string;
@@ -50,6 +51,8 @@ export default defineEventHandler(async (event): Promise<ApiTagResponse> => {
     return { count: 0, results: [] };
   }
 
+  logger.info("tags request", { imageName, page, pageSize });
+
   try {
     const response = await axiosInstance.get<HubTagResponse>(
       `https://hub.docker.com/v2/repositories/${namespace}/${repo}/tags`,
@@ -82,6 +85,7 @@ export default defineEventHandler(async (event): Promise<ApiTagResponse> => {
     if (statusCode === 404) {
       return { count: 0, results: [] };
     }
+    logger.error("tags failed", { imageName, page, pageSize, message: error.message });
     throw createError({
       statusCode,
       message: error.message,
