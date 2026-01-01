@@ -71,9 +71,13 @@ export default defineEventHandler(async (event): Promise<ApiSearchResponse> => {
       pull_count: item.pull_count || 0,
     }));
 
+    const sorted = mapped.sort(
+      (a, b) => (b.pull_count || 0) - (a.pull_count || 0)
+    );
+
     return {
       count: response.data.count ?? mapped.length,
-      results: mapped,
+      results: sorted,
     };
   } catch (error: any) {
     throw createError({
