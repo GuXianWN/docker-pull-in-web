@@ -13,18 +13,18 @@ jobs:
 
     steps:
       # 1. 检出代码
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       # 2. 安装 pnpm
       - name: Install pnpm
         run: npm install -g pnpm
 
-      # 3. 设置 Node.js 环境
-      - name: Use Node.js
-        uses: actions/setup-node@v3
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          node-version: 18
-          cache: 'pnpm'
+          node-version: 20
+          cache: pnpm
 
       # 4. 安装依赖
       - name: Install dependencies
