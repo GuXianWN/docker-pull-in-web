@@ -48,6 +48,7 @@ export default defineEventHandler(async (event) => {
   setHeader(event, "Content-Type", "text/event-stream");
   setHeader(event, "Cache-Control", "no-cache");
   setHeader(event, "Connection", "keep-alive");
+  event.node.res.flushHeaders?.();
 
   const query = getQuery(event);
   const { imageName: rawImageName, token, layers: layersJson } = query as unknown as QueryParams;
@@ -93,6 +94,7 @@ export default defineEventHandler(async (event) => {
   // 发送进度更新
   const sendProgress = (progress: DownloadProgress) => {
     event.node.res.write(`data: ${JSON.stringify(progress)}\n\n`);
+    (event.node.res as any).flush?.();
   };
 
   // 下载单个层
@@ -174,21 +176,18 @@ export default defineEventHandler(async (event) => {
     const activeDownloads = new Set<string>();
     const results: LayerDownloadResult[] = [];
 
-    // 处理下一个下载任务
-    const processNextLayer = async () => {
-      if (queue.length === 0) return;
+    // 处理下载任务（worker loop）
+    const processQueue = async () => {
+      while (true) {
+        const layer = queue.shift();
+        if (!layer) return;
 
-      const layer = queue.shift()!;
-      activeDownloads.add(layer.digest);
-
-      try {
-        const result = await downloadLayer(layer);
-        results.push(result);
-      } finally {
-        activeDownloads.delete(layer.digest);
-
-        if (queue.length > 0) {
-          processNextLayer();
+        activeDownloads.add(layer.digest);
+        try {
+          const result = await downloadLayer(layer);
+          results.push(result);
+        } finally {
+          activeDownloads.delete(layer.digest);
         }
       }
     };
@@ -197,7 +196,7 @@ export default defineEventHandler(async (event) => {
     const initialDownloads = Math.min(CONCURRENT_DOWNLOADS, layers.length);
     const downloadPromises = Array(initialDownloads)
       .fill(null)
-      .map(() => processNextLayer());
+      .map(() => processQueue());
 
     // 等待所有下载完成
     await Promise.all(downloadPromises);
@@ -223,6 +222,7 @@ export default defineEventHandler(async (event) => {
         },
       })}\n\n`
     );
+    (event.node.res as any).flush?.();
 
 
     return;

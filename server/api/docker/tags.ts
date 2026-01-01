@@ -68,9 +68,9 @@ export default defineEventHandler(async (event): Promise<ApiTagResponse> => {
     }));
 
     const sorted = mapped.sort((a, b) => {
-      const timeA = a.last_updated ? new Date(a.last_updated).getTime() : 0;
-      const timeB = b.last_updated ? new Date(b.last_updated).getTime() : 0;
-      return timeB - timeA;
+      if (a.name === "latest") return -1;
+      if (b.name === "latest") return 1;
+      return b.name.localeCompare(a.name, undefined, { numeric: true });
     });
 
     return {
