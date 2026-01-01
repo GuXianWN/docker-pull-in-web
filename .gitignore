@@ -29,4 +29,5 @@ downloads
 
 # 忽略 npm/yarn lock 文件
 package-lock.json
+pnpm-lock.yaml
 yarn.lock
