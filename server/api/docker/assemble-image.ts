@@ -2,6 +2,11 @@ import { writeFileSync, promises as fs } from "fs";
 import { join } from "path";
 import * as tar from "tar";
 import axiosInstance from "~/server/config/axios";
+import {
+  normalizeImageName,
+  getRepoTagName,
+  getSafeFileBaseName,
+} from "~/server/utils/imageName";
 
 // 请求参数接口
 type AssembleParams = {
@@ -53,11 +58,14 @@ type LayerJson = {
 export default defineEventHandler(async (event) => {
   const query = getQuery(event);
   const {
-    imageName,
+    imageName: rawImageName,
     tag,
     token,
     manifest: manifestJson,
   } = query as unknown as AssembleParams;
+  const imageName = normalizeImageName(rawImageName || "");
+  const repoTagName = getRepoTagName(rawImageName || imageName);
+  const fileBaseName = getSafeFileBaseName(rawImageName || imageName);
   const manifest = JSON.parse(manifestJson) as DockerManifest;
 
   // 创建临时目录
@@ -127,7 +135,7 @@ export default defineEventHandler(async (event) => {
     const manifestJson = [
       {
         Config: `${configFileName}.json`,
-        RepoTags: [`${imageName}:${tag}`],
+        RepoTags: [`${repoTagName}:${tag}`],
         Layers: manifest.layers.map(
           (layer) => `${layer.digest.replace("sha256:", "")}/layer.tar`
         ),
@@ -146,7 +154,7 @@ export default defineEventHandler(async (event) => {
 
     // 写入repositories文件
     const repositoriesJson = {
-      [imageName]: {
+      [repoTagName]: {
         [tag]: configFileName,
       },
     };
@@ -160,7 +168,7 @@ export default defineEventHandler(async (event) => {
     setHeader(
       event,
       "Content-Disposition",
-      `attachment; filename="${imageName}-${tag}.tar"`
+      `attachment; filename="${fileBaseName}-${tag}.tar"`
     );
 
     // 创建tar流并转换为buffer

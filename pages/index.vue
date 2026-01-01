@@ -21,18 +21,102 @@
       >
         <div class="bg-gray-50 p-6 rounded-xl transition-shadow duration-300 hover:shadow-md">
           <div class="grid grid-cols-2 gap-4 mb-4">
-            <UInput
-              v-model="state.imageName"
-              placeholder="Image Name (e.g., nginx)"
-              class="w-full"
-              @input="handleImageChange"
-            />
-            <UInput
-              v-model="state.tag"
-              placeholder="Tag (e.g., latest)"
-              class="w-full focus:border-gray-400 border-gray-200 !ring-0"
-              @input="handleImageChange"
-            />
+            <div class="relative">
+              <UInput
+                v-model="state.imageName"
+                placeholder="镜像名称（支持搜索）"
+                class="w-full"
+                @input="handleImageInput"
+                @blur="handleSearchBlur"
+                @focus="handleSearchFocus"
+              />
+              <div
+                v-if="state.searchLoading || state.searchError || state.searchResults.length || state.searchLastQuery"
+                class="absolute z-10 mt-1 w-full max-h-60 overflow-auto rounded-lg bg-white shadow-lg ring-1 ring-gray-200"
+              >
+                <div
+                  v-if="state.searchLoading"
+                  class="px-3 py-2 text-sm text-gray-500"
+                >
+                  搜索中...
+                </div>
+                <div
+                  v-else-if="state.searchError"
+                  class="px-3 py-2 text-sm text-red-500"
+                >
+                  {{ state.searchError }}
+                </div>
+                <template v-else>
+                  <button
+                    v-for="item in state.searchResults"
+                    :key="item.fullName"
+                    class="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                    @click="selectSearchResult(item)"
+                    type="button"
+                  >
+                    <div class="text-sm text-gray-900 font-medium">
+                      {{ item.fullName }}
+                      <span v-if="item.is_official" class="text-xs text-green-600">官方</span>
+                    </div>
+                    <div v-if="item.description" class="text-xs text-gray-500 truncate">
+                      {{ item.description }}
+                    </div>
+                  </button>
+                  <div
+                    v-if="state.searchLastQuery && state.searchResults.length === 0"
+                    class="px-3 py-2 text-sm text-gray-500"
+                  >
+                    未找到匹配的镜像
+                  </div>
+                </template>
+              </div>
+            </div>
+            <div class="relative">
+              <UInput
+                v-model="state.tag"
+                placeholder="Tag（支持搜索）"
+                class="w-full focus:border-gray-400 border-gray-200 !ring-0"
+                @input="handleTagInput"
+                @blur="handleTagBlur"
+                @focus="handleTagFocus"
+              />
+              <div
+                v-if="state.tagSearchLoading || state.tagSearchError || state.tagSearchResults.length || state.tagSearchLastQuery"
+                class="absolute z-10 mt-1 w-full max-h-60 overflow-auto rounded-lg bg-white shadow-lg ring-1 ring-gray-200"
+              >
+                <div
+                  v-if="state.tagSearchLoading"
+                  class="px-3 py-2 text-sm text-gray-500"
+                >
+                  搜索中...
+                </div>
+                <div
+                  v-else-if="state.tagSearchError"
+                  class="px-3 py-2 text-sm text-red-500"
+                >
+                  {{ state.tagSearchError }}
+                </div>
+                <template v-else>
+                  <button
+                    v-for="item in state.tagSearchResults"
+                    :key="item.name"
+                    class="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                    @click="selectTagResult(item)"
+                    type="button"
+                  >
+                    <div class="text-sm text-gray-900 font-medium">
+                      {{ item.name }}
+                    </div>
+                  </button>
+                  <div
+                    v-if="state.tagSearchLastQuery && state.tagSearchResults.length === 0"
+                    class="px-3 py-2 text-sm text-gray-500"
+                  >
+                    未找到匹配的标签
+                  </div>
+                </template>
+              </div>
+            </div>
           </div>
           
           <UButton
@@ -135,13 +219,18 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, computed } from "vue";
+import { reactive, computed, ref, onBeforeUnmount } from "vue";
+import debounce from "lodash/debounce";
 import type {
   TokenResponse,
   ManifestResponse,
   ManifestDetailResponse,
   DockerPlatform,
   DownloadProgress,
+  DockerSearchResponse,
+  DockerSearchResult,
+  DockerTagResponse,
+  DockerTagResult,
 } from "~/types/docker";
 
 // 状态处理
@@ -157,6 +246,16 @@ const state = reactive({
   currentToken: "",
   currentManifest: null as any,
   downloadComplete: false,
+  searchLoading: false,
+  searchError: "",
+  searchResults: [] as DockerSearchResult[],
+  searchLastQuery: "",
+  skipNextSearch: false,
+  tagSearchLoading: false,
+  tagSearchError: "",
+  tagSearchResults: [] as DockerTagResult[],
+  tagSearchLastQuery: "",
+  skipNextTagSearch: false,
   downloadSummary: null as {
     total: number;
     skipped: number;
@@ -177,9 +276,187 @@ const canFetchPlatforms = computed(() =>
   state.imageName && state.tag && !state.loading
 );
 
+const imageBlurTimer = ref<ReturnType<typeof setTimeout> | null>(null);
+const tagBlurTimer = ref<ReturnType<typeof setTimeout> | null>(null);
+const debouncedSearch = debounce((query: string) => {
+  fetchSearch(query);
+}, 300);
+const debouncedTagSearch = debounce((query: string) => {
+  fetchTagSearch(query);
+}, 300);
+
+onBeforeUnmount(() => {
+  debouncedSearch.cancel();
+  debouncedTagSearch.cancel();
+});
+
 // 事件处理
 const handlePlatformSelect = (platform: DockerPlatform) => {
   state.selectedPlatform = platform;
+};
+
+const fetchSearch = async (query: string) => {
+  state.searchLoading = true;
+  state.searchError = "";
+  state.searchLastQuery = query;
+  try {
+    const response = await $fetch<DockerSearchResponse>("/api/docker/search", {
+      params: {
+        query,
+        pageSize: 10,
+      },
+    });
+    state.searchResults = response.results;
+  } catch (e) {
+    console.error("搜索镜像失败:", e);
+    state.searchError = "搜索失败，请稍后重试";
+    state.searchResults = [];
+  } finally {
+    state.searchLoading = false;
+  }
+};
+
+const scheduleSearch = (query: string) => {
+  const trimmed = query.trim();
+  if (trimmed.length < 2) {
+    debouncedSearch.cancel();
+    state.searchResults = [];
+    state.searchError = "";
+    state.searchLastQuery = "";
+    state.searchLoading = false;
+    return;
+  }
+  debouncedSearch(trimmed);
+};
+
+const fetchTagSearch = async (query: string, pageSize = 10) => {
+  if (!state.imageName.trim()) {
+    state.tagSearchResults = [];
+    state.tagSearchError = "请先输入镜像名称";
+    state.tagSearchLoading = false;
+    return;
+  }
+  state.tagSearchLoading = true;
+  state.tagSearchError = "";
+  state.tagSearchLastQuery = query;
+  try {
+    const response = await $fetch<DockerTagResponse>("/api/docker/tags", {
+      params: {
+        imageName: state.imageName,
+        query,
+        pageSize,
+      },
+    });
+    state.tagSearchResults = response.results;
+  } catch (e) {
+    console.error("搜索标签失败:", e);
+    state.tagSearchError = "搜索失败，请稍后重试";
+    state.tagSearchResults = [];
+  } finally {
+    state.tagSearchLoading = false;
+  }
+};
+
+const scheduleTagSearch = (query: string) => {
+  const trimmed = query.trim();
+  if (!state.imageName.trim()) {
+    debouncedTagSearch.cancel();
+    state.tagSearchResults = [];
+    state.tagSearchError = "请先输入镜像名称";
+    state.tagSearchLastQuery = "";
+    state.tagSearchLoading = false;
+    return;
+  }
+  if (trimmed.length < 1) {
+    debouncedTagSearch.cancel();
+    state.tagSearchResults = [];
+    state.tagSearchError = "";
+    state.tagSearchLastQuery = "";
+    state.tagSearchLoading = false;
+    return;
+  }
+  debouncedTagSearch(trimmed);
+};
+
+const handleSearchBlur = () => {
+  if (imageBlurTimer.value) {
+    clearTimeout(imageBlurTimer.value);
+  }
+  imageBlurTimer.value = setTimeout(() => {
+    state.searchResults = [];
+    state.searchLastQuery = "";
+  }, 200);
+};
+
+const handleSearchFocus = () => {
+  if (imageBlurTimer.value) {
+    clearTimeout(imageBlurTimer.value);
+  }
+};
+
+const handleTagBlur = () => {
+  if (tagBlurTimer.value) {
+    clearTimeout(tagBlurTimer.value);
+  }
+  tagBlurTimer.value = setTimeout(() => {
+    state.tagSearchResults = [];
+    state.tagSearchLastQuery = "";
+  }, 200);
+};
+
+const handleTagFocus = () => {
+  if (tagBlurTimer.value) {
+    clearTimeout(tagBlurTimer.value);
+  }
+  if (!state.imageName.trim()) {
+    state.tagSearchResults = [];
+    state.tagSearchError = "请先输入镜像名称";
+    state.tagSearchLastQuery = "";
+    state.tagSearchLoading = false;
+    return;
+  }
+  debouncedTagSearch.cancel();
+  fetchTagSearch("", 50);
+};
+
+const handleImageInput = () => {
+  handleImageChange();
+  if (state.skipNextSearch) {
+    state.skipNextSearch = false;
+    debouncedSearch.cancel();
+    return;
+  }
+  scheduleSearch(state.imageName);
+};
+
+const handleTagInput = () => {
+  handleImageChange();
+  if (state.skipNextTagSearch) {
+    state.skipNextTagSearch = false;
+    debouncedTagSearch.cancel();
+    return;
+  }
+  scheduleTagSearch(state.tag);
+};
+
+const selectSearchResult = (item: DockerSearchResult) => {
+  state.skipNextSearch = true;
+  state.imageName = item.fullName;
+  debouncedSearch.cancel();
+  state.searchResults = [];
+  state.searchError = "";
+  state.searchLastQuery = "";
+  handleImageChange();
+};
+
+const selectTagResult = (item: DockerTagResult) => {
+  state.skipNextTagSearch = true;
+  state.tag = item.name;
+  debouncedTagSearch.cancel();
+  state.tagSearchResults = [];
+  state.tagSearchError = "";
+  state.tagSearchLastQuery = "";
+  handleImageChange();
 };
 
 // API调用
@@ -300,7 +577,8 @@ const assembleImage = async () => {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${state.imageName}-${state.tag}.tar`;
+    const safeName = state.imageName.replaceAll("/", "_");
+    a.download = `${safeName}-${state.tag}.tar`;
     document.body.appendChild(a);
     a.click();
     window.URL.revokeObjectURL(url);
@@ -380,6 +658,9 @@ const handleImageChange = () => {
   state.downloadProgress = {};
   state.downloadComplete = false;
   state.downloadSummary = null;
+  state.tagSearchResults = [];
+  state.tagSearchError = "";
+  state.tagSearchLastQuery = "";
 };
 </script>
 

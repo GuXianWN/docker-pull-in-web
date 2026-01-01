@@ -56,4 +56,29 @@ export type DownloadSummary = {
   total: number;
   skipped: number;
   downloaded: number;
-}; 
+};
+
+export type DockerSearchResult = {
+  name: string;
+  namespace: string;
+  fullName: string;
+  description?: string;
+  is_official?: boolean;
+  star_count?: number;
+  pull_count?: number;
+};
+
+export type DockerSearchResponse = {
+  count: number;
+  results: DockerSearchResult[];
+};
+
+export type DockerTagResult = {
+  name: string;
+  last_updated?: string;
+};
+
+export type DockerTagResponse = {
+  count: number;
+  results: DockerTagResult[];
+};

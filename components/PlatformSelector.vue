@@ -6,18 +6,18 @@
     enter-to-class="opacity-100 translate-y-0"
   >
     <div class="flex gap-3">
-      <USelect
+      <USelectMenu
         v-model="selectedArch"
         :options="availableArchitectures"
         placeholder="选择架构"
-        class="flex-1 focus:border-gray-400 border-gray-200 !ring-0"
+        class="flex-1"
         @update:model-value="handleChange"
       />
-      <USelect
+      <USelectMenu
         v-model="selectedOS"
         :options="availableOS"
         placeholder="选择操作系统"
-        class="flex-1 focus:border-gray-400 border-gray-200 !ring-0"
+        class="flex-1"
         @update:model-value="handleChange"
       />
     </div>

@@ -1,6 +1,7 @@
 import { createWriteStream, existsSync, mkdirSync, statSync } from "fs";
 import { join } from "path";
 import axiosInstance from "~/server/config/axios";
+import { normalizeImageName } from "~/server/utils/imageName";
 
 // 请求参数接口
 type QueryParams = {
@@ -49,7 +50,8 @@ export default defineEventHandler(async (event) => {
   setHeader(event, "Connection", "keep-alive");
 
   const query = getQuery(event);
-  const { imageName, token, layers: layersJson } = query as unknown as QueryParams;
+  const { imageName: rawImageName, token, layers: layersJson } = query as unknown as QueryParams;
+  const imageName = normalizeImageName(rawImageName || "");
 
   if (!token) {
     throw createError({

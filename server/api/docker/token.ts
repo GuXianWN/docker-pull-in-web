@@ -1,5 +1,6 @@
 // 请求参数接口
 import axiosInstance from "~/server/config/axios";
+import { normalizeImageName } from "~/server/utils/imageName";
 
 type QueryParams = {
   imageName?: string;
@@ -20,7 +21,8 @@ type ApiResponse = {
 
 export default defineEventHandler(async (event): Promise<ApiResponse> => {
   const query = getQuery(event) as QueryParams;
-  const imageName = query.imageName || "nginx";
+  const rawImageName = query.imageName || "nginx";
+  const imageName = normalizeImageName(rawImageName);
   const scope = query.scope || "pull";
 
   const fetchToken = async () => {

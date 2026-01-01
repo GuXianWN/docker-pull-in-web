@@ -1,5 +1,6 @@
 // 请求参数接口
 import axiosInstance from "~/server/config/axios";
+import { normalizeImageName } from "~/server/utils/imageName";
 
 type QueryParams = {
   imageName: string;
@@ -33,7 +34,9 @@ type ManifestDetailResponse = {
 export default defineEventHandler(
   async (event): Promise<ManifestDetailResponse> => {
     const query = getQuery(event) as QueryParams;
-    const { imageName, digest, token, mediaType } = query;
+    const rawImageName = query.imageName || "";
+    const imageName = normalizeImageName(rawImageName);
+    const { digest, token, mediaType } = query;
 
     const fetchManifestDetail = async () => {
       const response = await axiosInstance.get<ManifestDetailResponse>(
