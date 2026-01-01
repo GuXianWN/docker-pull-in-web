@@ -27,5 +27,6 @@ tmp
 # 忽略下载的文件 downloads 下的所有文件
 downloads
 
-# 忽略 yarn.lock 文件
+# 忽略 npm/yarn lock 文件
+package-lock.json
 yarn.lock
