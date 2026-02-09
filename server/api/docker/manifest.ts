@@ -31,6 +31,21 @@ type ManifestResponse = {
   schemaVersion: number;
 };
 
+type SingleManifestResponse = {
+  config: {
+    digest: string;
+    mediaType: string;
+    size: number;
+  };
+  layers: Array<{
+    digest: string;
+    mediaType: string;
+    size: number;
+  }>;
+  mediaType: string;
+  schemaVersion: number;
+};
+
 export default defineEventHandler(async (event): Promise<ManifestResponse> => {
   const query = getQuery(event) as QueryParams;
   const rawImageName = query.imageName || "";
@@ -40,7 +55,9 @@ export default defineEventHandler(async (event): Promise<ManifestResponse> => {
   logger.info("manifest request", { imageName, tag });
 
   const fetchManifest = async () => {
-    const response = await axiosInstance.get<ManifestResponse>(
+    const response = await axiosInstance.get<
+      ManifestResponse | SingleManifestResponse
+    >(
       `https://registry-1.docker.io/v2/${imageName}/manifests/${tag}`,
       {
         headers: {
@@ -55,8 +72,36 @@ export default defineEventHandler(async (event): Promise<ManifestResponse> => {
 
   try {
     const result = await fetchManifest();
-    logger.info("manifest success", { imageName, tag, count: result.manifests?.length || 0 });
-    return result;
+    if ("manifests" in result && Array.isArray(result.manifests)) {
+      logger.info("manifest success", {
+        imageName,
+        tag,
+        count: result.manifests.length,
+      });
+      return result;
+    }
+
+    const normalized: ManifestResponse = {
+      manifests: [
+        {
+          digest: tag,
+          mediaType: result.mediaType,
+          platform: {
+            architecture: "unknown",
+            os: "unknown",
+          },
+          size: 0,
+        },
+      ],
+      mediaType: result.mediaType,
+      schemaVersion: result.schemaVersion ?? 2,
+    };
+    logger.info("manifest success (single)", {
+      imageName,
+      tag,
+      count: normalized.manifests.length,
+    });
+    return normalized;
   } catch (error: any) {
     logger.error("manifest failed", { imageName, tag, message: error.message });
     throw createError({
