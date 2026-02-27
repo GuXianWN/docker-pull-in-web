@@ -1,4 +1,5 @@
 import axiosInstance from "~/server/config/axios";
+import { getErrorMessage, getErrorStatusCode } from "~/server/utils/http-error";
 import { logger } from "~/server/utils/logger";
 
 type QueryParams = {
@@ -82,11 +83,12 @@ export default defineEventHandler(async (event): Promise<ApiSearchResponse> => {
       count: response.data.count ?? mapped.length,
       results: sorted,
     };
-  } catch (error: any) {
-    logger.error("search failed", { query: q, page, pageSize, message: error.message });
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    logger.error("search failed", { query: q, page, pageSize, message });
     throw createError({
-      statusCode: error.response?.status || 500,
-      message: error.message,
+      statusCode: getErrorStatusCode(error),
+      message,
     });
   }
 });

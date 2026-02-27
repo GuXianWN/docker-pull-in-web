@@ -8,6 +8,7 @@ import {
   getRepoTagName,
   getSafeFileBaseName,
 } from "~/server/utils/imageName";
+import { getErrorMessage } from "~/server/utils/http-error";
 import { logger } from "~/server/utils/logger";
 
 // 请求参数接口
@@ -216,7 +217,8 @@ export default defineEventHandler(async (event) => {
     });
 
     return sendStream(event, tarStream);
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
     // 清理临时目录
     try {
       await fs.rm(tmpDir, { recursive: true, force: true });
@@ -227,12 +229,12 @@ export default defineEventHandler(async (event) => {
     logger.error("assemble failed", {
       imageName,
       tag,
-      message: error.message,
+      message,
       elapsedMs: Date.now() - startedAt,
     });
     throw createError({
       statusCode: 500,
-      message: error.message,
+      message,
     });
   }
 });

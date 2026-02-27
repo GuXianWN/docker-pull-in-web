@@ -1,6 +1,7 @@
 import { createWriteStream, existsSync, mkdirSync, statSync } from "fs";
 import { join } from "path";
 import axiosInstance from "~/server/config/axios";
+import { getErrorMessage } from "~/server/utils/http-error";
 import { normalizeImageName } from "~/server/utils/imageName";
 import { logger } from "~/server/utils/logger";
 
@@ -188,8 +189,9 @@ export default defineEventHandler(async (event) => {
         digest: layer.digest,
         skipped: false,
       };
-    } catch (error: any) {
-      if (String(error?.message).toLowerCase().includes("timeout")) {
+    } catch (error: unknown) {
+      const message = getErrorMessage(error);
+      if (message.toLowerCase().includes("timeout")) {
         return {
           success: false,
           digest: layer.digest,
@@ -199,7 +201,7 @@ export default defineEventHandler(async (event) => {
       return {
         success: false,
         digest: layer.digest,
-        error: error.message,
+        error: message,
       };
     } finally {
       clearTimeout(timeoutId);
@@ -287,11 +289,12 @@ export default defineEventHandler(async (event) => {
 
 
     return;
-  } catch (error: any) {
-    logger.error("pull failed", { imageName, message: error.message });
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    logger.error("pull failed", { imageName, message });
     throw createError({
       statusCode: 500,
-      message: error.message,
+      message,
     });
   }
 }); 

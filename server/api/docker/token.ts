@@ -1,6 +1,7 @@
 // 请求参数接口
 import axiosInstance from "~/server/config/axios";
 import { normalizeImageName } from "~/server/utils/imageName";
+import { getErrorMessage, getErrorStatusCode } from "~/server/utils/http-error";
 import { logger } from "~/server/utils/logger";
 
 type QueryParams = {
@@ -47,11 +48,12 @@ export default defineEventHandler(async (event): Promise<ApiResponse> => {
     return {
       token: authResponse.token,
     };
-  } catch (error: any) {
-    logger.error("token failed", { imageName, scope, message: error.message });
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    logger.error("token failed", { imageName, scope, message });
     throw createError({
-      statusCode: error.response?.status || 500,
-      message: error.message,
+      statusCode: getErrorStatusCode(error),
+      message,
     });
   }
 }); 

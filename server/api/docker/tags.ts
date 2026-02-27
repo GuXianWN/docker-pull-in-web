@@ -1,4 +1,5 @@
 import axiosInstance from "~/server/config/axios";
+import { getErrorMessage, getErrorStatusCode } from "~/server/utils/http-error";
 import { normalizeImageName } from "~/server/utils/imageName";
 import { logger } from "~/server/utils/logger";
 
@@ -80,15 +81,16 @@ export default defineEventHandler(async (event): Promise<ApiTagResponse> => {
       count: response.data.count ?? mapped.length,
       results: sorted,
     };
-  } catch (error: any) {
-    const statusCode = error.response?.status || 500;
+  } catch (error: unknown) {
+    const statusCode = getErrorStatusCode(error);
+    const message = getErrorMessage(error);
     if (statusCode === 404) {
       return { count: 0, results: [] };
     }
-    logger.error("tags failed", { imageName, page, pageSize, message: error.message });
+    logger.error("tags failed", { imageName, page, pageSize, message });
     throw createError({
       statusCode,
-      message: error.message,
+      message,
     });
   }
 });
