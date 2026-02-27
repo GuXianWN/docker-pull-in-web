@@ -1,17 +1,18 @@
 import { writeFileSync, promises as fs } from "fs";
 import { join } from "path";
-import * as tar from "tar";
+import { Readable } from "node:stream";
+import type { H3Event } from "h3";
 import { sendStream } from "h3";
+import * as tar from "tar";
 import axiosInstance from "~/server/config/axios";
+import { getErrorMessage } from "~/server/utils/http-error";
 import {
-  normalizeImageName,
   getRepoTagName,
   getSafeFileBaseName,
+  normalizeImageName,
 } from "~/server/utils/imageName";
-import { getErrorMessage } from "~/server/utils/http-error";
 import { logger } from "~/server/utils/logger";
 
-// 请求参数接口
 type AssembleParams = {
   imageName: string;
   tag: string;
@@ -19,160 +20,161 @@ type AssembleParams = {
   manifest: string;
 };
 
-// Docker配置接口
 type DockerConfig = {
   digest: string;
   mediaType: string;
   size: number;
 };
 
-// Docker层接口
 type DockerLayer = {
   digest: string;
   mediaType: string;
   size: number;
 };
 
-// Docker平台接口
 type DockerPlatform = {
   architecture: string;
   os: string;
 };
 
-// Docker清单接口
 type DockerManifest = {
   config: DockerConfig;
   layers: DockerLayer[];
   platform: DockerPlatform;
 };
 
-// 层JSON配置接口
 type LayerJson = {
   id: string;
   parent?: string;
   created: string;
-  container_config: {
-    Cmd: string[];
-  };
+  container_config: { Cmd: string[] };
   architecture: string;
   os: string;
 };
 
-export default defineEventHandler(async (event) => {
-  const query = getQuery(event);
-  const {
-    imageName: rawImageName,
-    tag,
-    token,
-    manifest: manifestJson,
-  } = query as unknown as AssembleParams;
-  const imageName = normalizeImageName(rawImageName || "");
-  const repoTagName = getRepoTagName(rawImageName || imageName);
-  const fileBaseName = getSafeFileBaseName(rawImageName || imageName);
-  const manifest = JSON.parse(manifestJson) as DockerManifest;
-  const startedAt = Date.now();
-  logger.info("assemble start", {
-    imageName,
-    tag,
-    layers: manifest.layers?.length || 0,
-  });
+type AssembleContext = {
+  imageName: string;
+  repoTagName: string;
+  fileBaseName: string;
+  tag: string;
+  token: string;
+  manifest: DockerManifest;
+};
 
-  // 创建临时目录
+const stripSha256 = (digest: string) => digest.replace("sha256:", "");
+const TAR_OPTIONS = {
+  preservePaths: true,
+  follow: true,
+  noPax: true,
+  noMtime: true,
+  gzip: false,
+} as const;
+
+const parseAssembleContext = (event: H3Event): AssembleContext => {
+  const query = getQuery(event) as unknown as AssembleParams;
+  const imageName = normalizeImageName(query.imageName || "");
+  if (!query.tag || !query.token || !query.manifest) {
+    throw createError({ statusCode: 400, message: "缺少必要参数" });
+  }
+  return {
+    imageName,
+    repoTagName: getRepoTagName(query.imageName || imageName),
+    fileBaseName: getSafeFileBaseName(query.imageName || imageName),
+    tag: query.tag,
+    token: query.token,
+    manifest: JSON.parse(query.manifest) as DockerManifest,
+  };
+};
+
+const fetchConfigJson = async (imageName: string, token: string, digest: string) => {
+  const response = await axiosInstance.get(
+    `https://registry-1.docker.io/v2/${imageName}/blobs/${digest}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  return response.data;
+};
+
+const processLayer = async (
+  tmpDir: string,
+  imageName: string,
+  manifest: DockerManifest,
+  layer: DockerLayer,
+  index: number
+) => {
+  const layerId = stripSha256(layer.digest);
+  const parentLayer = index > 0 ? manifest.layers[index - 1] : undefined;
+  const layerDir = join(tmpDir, layerId);
+
+  await fs.mkdir(layerDir, { recursive: true });
+  writeFileSync(join(layerDir, "VERSION"), "1.0");
+
+  const layerJson: LayerJson = {
+    id: layerId,
+    parent: parentLayer ? stripSha256(parentLayer.digest) : undefined,
+    created: new Date().toISOString(),
+    container_config: { Cmd: ["baselayer"] },
+    architecture: manifest.platform.architecture,
+    os: manifest.platform.os,
+  };
+
+  writeFileSync(join(layerDir, "json"), JSON.stringify(layerJson, null, 2));
+
+  const sourceFile = join(
+    process.cwd(),
+    "downloads",
+    imageName,
+    `${layer.digest.replace(":", "_")}.tar`
+  );
+  await fs.copyFile(sourceFile, join(layerDir, "layer.tar"));
+};
+
+const writeMetadataFiles = (
+  tmpDir: string,
+  manifest: DockerManifest,
+  repoTagName: string,
+  tag: string,
+  configFileName: string,
+  configJson: unknown
+) => {
+  const dockerManifest = [
+    {
+      Config: `${configFileName}.json`,
+      RepoTags: [`${repoTagName}:${tag}`],
+      Layers: manifest.layers.map((layer) => `${stripSha256(layer.digest)}/layer.tar`),
+    },
+  ];
+
+  const repositories = { [repoTagName]: { [tag]: configFileName } };
+
+  writeFileSync(join(tmpDir, "manifest.json"), JSON.stringify(dockerManifest, null, 2));
+  writeFileSync(join(tmpDir, `${configFileName}.json`), JSON.stringify(configJson, null, 2));
+  writeFileSync(join(tmpDir, "repositories"), JSON.stringify(repositories, null, 2));
+};
+
+export default defineEventHandler(async (event) => {
+  const ctx = parseAssembleContext(event);
+  const { imageName, repoTagName, fileBaseName, tag, token, manifest } = ctx;
+  const startedAt = Date.now();
+
+  logger.info("assemble start", { imageName, tag, layers: manifest.layers.length });
+
   const tmpDir = join(process.cwd(), "tmp", `${imageName}-${Date.now()}`);
   await fs.mkdir(tmpDir, { recursive: true });
 
-  // 获取配置文件
-  const fetchConfig = async () => {
-    const response = await axiosInstance.get(
-      `https://registry-1.docker.io/v2/${imageName}/blobs/${manifest.config.digest}`,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      }
-    );
-    return response.data;
-  };
-
-  // 处理单个层
-  const processLayer = async (layer: DockerLayer, index: number) => {
-    const layerId = layer.digest.replace("sha256:", "");
-    const layerDir = join(tmpDir, layerId);
-
-    await fs.mkdir(layerDir, { recursive: true });
-
-    // 写入版本文件
-    writeFileSync(join(layerDir, "VERSION"), "1.0");
-
-    // 创建层配置
-    const layerJson: LayerJson = {
-      id: layerId,
-      parent:
-        index > 0
-          ? manifest.layers[index - 1].digest.replace("sha256:", "")
-          : undefined,
-      created: new Date().toISOString(),
-      container_config: {
-        Cmd: ["baselayer"],
-      },
-      architecture: manifest.platform.architecture,
-      os: manifest.platform.os,
-    };
-
-    // 写入层配置
-    writeFileSync(join(layerDir, "json"), JSON.stringify(layerJson, null, 2));
-
-    // 复制层文件
-    const sourceFile = join(
-      process.cwd(),
-      "downloads",
-      imageName,
-      `${layer.digest.replace(":", "_")}.tar`
-    );
-    await fs.copyFile(sourceFile, join(layerDir, "layer.tar"));
+  const cleanup = async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
   };
 
   try {
-    // 获取配置
-    const configJson = await fetchConfig();
-    const configFileName = manifest.config.digest.replace("sha256:", "");
+    const configJson = await fetchConfigJson(imageName, token, manifest.config.digest);
+    const configFileName = stripSha256(manifest.config.digest);
 
-    // 处理所有层
     await Promise.all(
-      manifest.layers.map((layer, index) => processLayer(layer, index))
+      manifest.layers.map((layer, index) => processLayer(tmpDir, imageName, manifest, layer, index))
     );
 
-    // 写入manifest.json
-    const manifestJson = [
-      {
-        Config: `${configFileName}.json`,
-        RepoTags: [`${repoTagName}:${tag}`],
-        Layers: manifest.layers.map(
-          (layer) => `${layer.digest.replace("sha256:", "")}/layer.tar`
-        ),
-      },
-    ];
-    writeFileSync(
-      join(tmpDir, "manifest.json"),
-      JSON.stringify(manifestJson, null, 2)
-    );
+    writeMetadataFiles(tmpDir, manifest, repoTagName, tag, configFileName, configJson);
 
-    // 写入配置文件
-    writeFileSync(
-      join(tmpDir, `${configFileName}.json`),
-      JSON.stringify(configJson, null, 2)
-    );
-
-    // 写入repositories文件
-    const repositoriesJson = {
-      [repoTagName]: {
-        [tag]: configFileName,
-      },
-    };
-    writeFileSync(
-      join(tmpDir, "repositories"),
-      JSON.stringify(repositoriesJson, null, 2)
-    );
-
-    // 设置响应头
     setHeader(event, "Content-Type", "application/x-tar");
     setHeader(
       event,
@@ -180,61 +182,35 @@ export default defineEventHandler(async (event) => {
       `attachment; filename="${fileBaseName}-${tag}.tar"`
     );
 
-    const tarStream = tar.create(
-      {
-        cwd: tmpDir,
-        preservePaths: true,
-        follow: true,
-        noPax: true,
-        noMtime: true,
-        gzip: false,
-      },
-      ["."]
-    );
-
-    let cleaned = false;
-    const cleanup = async () => {
-      if (cleaned) return;
-      cleaned = true;
-      await fs.rm(tmpDir, { recursive: true, force: true });
-    };
+    const tarStream = tar.create({ cwd: tmpDir, ...TAR_OPTIONS }, ["."]);
 
     tarStream.on("close", async () => {
       await cleanup();
-      logger.info("assemble complete", {
-        imageName,
-        tag,
-        elapsedMs: Date.now() - startedAt,
-      });
+      logger.info("assemble complete", { imageName, tag, elapsedMs: Date.now() - startedAt });
     });
-    tarStream.on("error", async (err) => {
+    tarStream.on("error", async (error: unknown) => {
       await cleanup();
       logger.error("assemble stream error", {
         imageName,
         tag,
-        message: String(err?.message || err),
+        message: getErrorMessage(error),
       });
     });
 
-    return sendStream(event, tarStream);
+    return sendStream(event, tarStream as unknown as Readable);
   } catch (error: unknown) {
-    const message = getErrorMessage(error);
-    // 清理临时目录
     try {
-      await fs.rm(tmpDir, { recursive: true, force: true });
-    } catch (e) {
-      console.warn("清理临时目录失败:", e);
+      await cleanup();
+    } catch (cleanupError: unknown) {
+      logger.warn("assemble cleanup failed", {
+        imageName,
+        tag,
+        message: getErrorMessage(cleanupError),
+      });
     }
 
-    logger.error("assemble failed", {
-      imageName,
-      tag,
-      message,
-      elapsedMs: Date.now() - startedAt,
-    });
-    throw createError({
-      statusCode: 500,
-      message,
-    });
+    const message = getErrorMessage(error);
+    logger.error("assemble failed", { imageName, tag, message, elapsedMs: Date.now() - startedAt });
+    throw createError({ statusCode: 500, message });
   }
 });

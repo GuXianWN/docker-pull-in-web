@@ -1,7 +1,6 @@
-// 请求参数接口
 import axiosInstance from "~/server/config/axios";
-import { normalizeImageName } from "~/server/utils/imageName";
 import { getErrorMessage, getErrorStatusCode } from "~/server/utils/http-error";
+import { normalizeImageName } from "~/server/utils/imageName";
 import { logger } from "~/server/utils/logger";
 
 type QueryParams = {
@@ -9,27 +8,27 @@ type QueryParams = {
   scope?: string;
 };
 
-// Docker认证响应接口
 type DockerAuthResponse = {
   token: string;
   expires_in: number;
   issued_at: string;
 };
 
-// API响应接口
 type ApiResponse = {
   token: string;
 };
 
+const DEFAULT_IMAGE_NAME = "nginx";
+const DEFAULT_SCOPE = "pull";
+
 export default defineEventHandler(async (event): Promise<ApiResponse> => {
   const query = getQuery(event) as QueryParams;
-  const rawImageName = query.imageName || "nginx";
-  const imageName = normalizeImageName(rawImageName);
-  const scope = query.scope || "pull";
+  const imageName = normalizeImageName(query.imageName || DEFAULT_IMAGE_NAME);
+  const scope = query.scope || DEFAULT_SCOPE;
 
   logger.info("token request", { imageName, scope });
 
-  const fetchToken = async () => {
+  try {
     const response = await axiosInstance.get<DockerAuthResponse>(
       "https://auth.docker.io/token",
       {
@@ -39,15 +38,9 @@ export default defineEventHandler(async (event): Promise<ApiResponse> => {
         },
       }
     );
-    return response.data;
-  };
 
-  try {
-    const authResponse = await fetchToken();
     logger.info("token success", { imageName, scope });
-    return {
-      token: authResponse.token,
-    };
+    return { token: response.data.token };
   } catch (error: unknown) {
     const message = getErrorMessage(error);
     logger.error("token failed", { imageName, scope, message });
@@ -56,4 +49,4 @@ export default defineEventHandler(async (event): Promise<ApiResponse> => {
       message,
     });
   }
-}); 
+});

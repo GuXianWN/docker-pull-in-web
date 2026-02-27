@@ -17,8 +17,6 @@ type HubTagResult = {
 
 type HubTagResponse = {
   count: number;
-  next?: string | null;
-  previous?: string | null;
   results: HubTagResult[];
 };
 
@@ -32,65 +30,74 @@ type ApiTagResponse = {
   results: ApiTagResult[];
 };
 
+const DEFAULT_PAGE = 1;
+const DEFAULT_PAGE_SIZE = 10;
+const MAX_PAGE_SIZE = 25;
+
+const parsePositiveInt = (value: string | undefined, fallback: number) => {
+  const parsed = parseInt(value || "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const parseRepoPath = (imageName: string) => {
+  const [namespace, ...rest] = imageName.split("/");
+  const repo = rest.join("/");
+  return namespace && repo ? { namespace, repo } : null;
+};
+
 export default defineEventHandler(async (event): Promise<ApiTagResponse> => {
   const query = getQuery(event) as QueryParams;
-  const rawImageName = (query.imageName || "").toString().trim();
-  const imageName = normalizeImageName(rawImageName);
-  const q = (query.query || "").toString().trim();
-
+  const imageName = normalizeImageName((query.imageName || "").trim());
   if (!imageName) {
     return { count: 0, results: [] };
   }
 
-  const page = Math.max(1, parseInt(query.page || "1", 10));
-  const pageSize = Math.min(25, Math.max(1, parseInt(query.pageSize || "10", 10)));
-
-  const [namespace, ...rest] = imageName.split("/");
-  const repo = rest.join("/");
-
-  if (!namespace || !repo) {
+  const repoPath = parseRepoPath(imageName);
+  if (!repoPath) {
     return { count: 0, results: [] };
   }
+
+  const keyword = (query.query || "").trim();
+  const page = parsePositiveInt(query.page, DEFAULT_PAGE);
+  const pageSize = Math.min(MAX_PAGE_SIZE, parsePositiveInt(query.pageSize, DEFAULT_PAGE_SIZE));
 
   logger.info("tags request", { imageName, page, pageSize });
 
   try {
     const response = await axiosInstance.get<HubTagResponse>(
-      `https://hub.docker.com/v2/repositories/${namespace}/${repo}/tags`,
+      `https://hub.docker.com/v2/repositories/${repoPath.namespace}/${repoPath.repo}/tags`,
       {
         params: {
           page,
           page_size: pageSize,
-          name: q || undefined,
+          name: keyword || undefined,
         },
       }
     );
 
-    const mapped = response.data.results.map((item) => ({
-      name: item.name,
-      last_updated: item.last_updated,
-    }));
-
-    const sorted = mapped.sort((a, b) => {
-      if (a.name === "latest") return -1;
-      if (b.name === "latest") return 1;
-      return b.name.localeCompare(a.name, undefined, { numeric: true });
-    });
+    const results = response.data.results
+      .map((item) => ({
+        name: item.name,
+        last_updated: item.last_updated,
+      }))
+      .sort((a, b) => {
+        if (a.name === "latest") return -1;
+        if (b.name === "latest") return 1;
+        return b.name.localeCompare(a.name, undefined, { numeric: true });
+      });
 
     return {
-      count: response.data.count ?? mapped.length,
-      results: sorted,
+      count: response.data.count ?? results.length,
+      results,
     };
   } catch (error: unknown) {
     const statusCode = getErrorStatusCode(error);
-    const message = getErrorMessage(error);
     if (statusCode === 404) {
       return { count: 0, results: [] };
     }
+
+    const message = getErrorMessage(error);
     logger.error("tags failed", { imageName, page, pageSize, message });
-    throw createError({
-      statusCode,
-      message,
-    });
+    throw createError({ statusCode, message });
   }
 });
