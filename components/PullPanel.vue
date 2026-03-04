@@ -113,9 +113,12 @@
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount } from "vue";
 import type {
+  AssembleResponse,
   TokenResponse,
   ManifestResponse,
   ManifestDetailResponse,
+  DockerManifest,
+  DockerLayer,
   DockerPlatform,
   DownloadProgress,
 } from "~/types/docker";
@@ -130,7 +133,7 @@ const selectedPlatform = ref<DockerPlatform | null>(null);
 const downloadProgress = ref<Record<string, DownloadProgress>>({});
 const activeDownloads = ref(new Set<string>());
 const currentToken = ref("");
-const currentManifest = ref<any>(null);
+const currentManifest = ref<{ platform: DockerManifest; detail: ManifestDetailResponse } | null>(null);
 const downloadComplete = ref(false);
 const downloadSummary = ref<{
   total: number;
@@ -214,7 +217,7 @@ const fetchManifests = async () => {
   return response;
 };
 
-const fetchManifestDetail = async (targetManifest: any) => {
+const fetchManifestDetail = async (targetManifest: DockerManifest) => {
   return await $fetch<ManifestDetailResponse>("/api/docker/manifest-detail", {
     params: {
       imageName: imageName.value,
@@ -227,7 +230,7 @@ const fetchManifestDetail = async (targetManifest: any) => {
 // #endregion
 
 // #region Download
-const handleDownloadProgress = async (eventSource: EventSource, layers: any[]) => {
+const handleDownloadProgress = async (eventSource: EventSource, layers: DockerLayer[]) => {
   return new Promise((resolve, reject) => {
     eventSource.onmessage = async (event) => {
       const data = JSON.parse(event.data);
@@ -273,7 +276,7 @@ const handleDownloadProgress = async (eventSource: EventSource, layers: any[]) =
   });
 };
 
-const downloadAllLayers = async (layers: any[]) => {
+const downloadAllLayers = async (layers: DockerLayer[]) => {
   if (activeDownloads.value.size > 0) return;
 
   const eventSource = new EventSource(
@@ -302,31 +305,31 @@ const downloadAllLayers = async (layers: any[]) => {
 // #region Assemble
 const assembleImage = async () => {
   try {
-    const response = await $fetch("/api/docker/assemble-image", {
-      params: {
+    if (!currentManifest.value) {
+      throw new Error("manifest 信息缺失");
+    }
+
+    const response = await $fetch<AssembleResponse>("/api/docker/assemble-image", {
+      method: "POST",
+      body: {
         imageName: imageName.value,
         tag: tag.value,
         token: currentToken.value,
-        manifest: JSON.stringify({
+        manifest: {
           config: currentManifest.value.detail.config,
           layers: currentManifest.value.detail.layers,
           platform: currentManifest.value.platform.platform,
-        }),
+        },
       },
-      responseType: "blob",
     });
 
-    const buffer = await (response as unknown as Response).arrayBuffer();
-    const blob = new Blob([buffer], { type: "application/x-tar" });
-
-    const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url;
-    const safeName = imageName.value.replaceAll("/", "_");
-    a.download = `${safeName}-${tag.value}.tar`;
+    a.href = `/api/docker/download-image?${new URLSearchParams({
+      downloadId: response.downloadId,
+    }).toString()}`;
+    a.download = response.fileName;
     document.body.appendChild(a);
     a.click();
-    window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
   } catch (e) {
     console.error("组装镜像时出错:", e);

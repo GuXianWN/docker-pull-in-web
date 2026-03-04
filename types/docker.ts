@@ -52,6 +52,11 @@ export type ManifestDetailResponse = {
   schemaVersion: number;
 };
 
+export type AssembleResponse = {
+  downloadId: string;
+  fileName: string;
+};
+
 export type DownloadSummary = {
   total: number;
   skipped: number;
